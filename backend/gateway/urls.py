@@ -1,5 +1,5 @@
 from django.urls import path
-from .views import TrendingView, SearchView, EpisodesView, VideoStreamInfoView
+from .views import TrendingView, SearchView, EpisodesView, VideoStreamInfoView, NameSuggestionView
 
 urlpatterns = [
     path('api/trending/', TrendingView.as_view(), name='api-trending'),
@@ -10,4 +10,5 @@ urlpatterns = [
         VideoStreamInfoView.as_view(),
         name='video_info',
     ),
+    path('api/suggest/name/', NameSuggestionView.as_view(), name='name_suggestion'),
 ]
