@@ -1,0 +1,8 @@
+from django.urls import path
+from .views import TrendingView, SearchView, EpisodesView
+
+urlpatterns = [
+    path('api/trending/', TrendingView.as_view(), name='api-trending'),
+    path('api/search/', SearchView.as_view(), name='api-search'),
+    path('api/episodes/', EpisodesView.as_view(), name='api-episodes'),
+]
