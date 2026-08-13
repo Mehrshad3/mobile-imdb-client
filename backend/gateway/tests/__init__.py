@@ -1,3 +1,3 @@
 from .a import ImdbProxyTests
 from .details import SeriesDetailedScraperTests, MovieDetailedScraperTests
-from .suggestions import SuggestionAndSearchTests
+from .suggestions import SuggestionAndSearchTests, AdvancedSearchTests

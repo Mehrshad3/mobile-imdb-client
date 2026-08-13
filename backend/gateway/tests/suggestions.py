@@ -55,3 +55,46 @@ class SuggestionAndSearchTests(TestCase):
         # از آنجایی که ساختار دقیق خروجی SearchView شما را ندارم، وجود کلمه کلیدی را در خامِ پاسخ بررسی می‌کنیم
         response_text = str(response.content)
         self.assertIn('Inception', response_text, "کلمه Inception باید در نتایج جستجوی سراسری وجود داشته باشد")
+
+
+class AdvancedSearchTests(TestCase):
+    def test_advanced_search_with_filters(self):
+        """
+        تست جستجوی پیشرفته: 
+        بررسی عملکرد جستجو بر اساس کلمه کلیدی، ژانر، و حداقل امتیاز.
+        """
+        # ارسال درخواست به سمت اندپوینت جستجوی پیشرفته
+        response = self.client.get('/api/search/advanced/', {
+            'q': 'Godfather',
+            'genre': 'Drama,Crime',
+            'min_rating': '8.5'
+        })
+        
+        # چاپ خطاهای پنهان در صورت بروز مشکل
+        if response.status_code != 200:
+            print("\n!!! ERROR DETAILS !!! :", response.json())
+            
+        self.assertEqual(response.status_code, 200)
+        
+        json_response = response.json()
+        self.assertEqual(json_response['status'], 'success')
+        
+        data = json_response['data']
+        # بررسی وجود لیست نتایج (edges)
+        self.assertIn('edges', data)
+        self.assertTrue(len(data['edges']) > 0, "لیست نتایج جستجوی پیشرفته نباید خالی باشد")
+
+    def test_advanced_search_date_range(self):
+        """
+        تست جستجوی پیشرفته با استفاده از بازه زمانی (سال انتشار)
+        """
+        response = self.client.get('/api/search/advanced/', {
+            'type': 'movie',
+            'start_date': '2020-01-01',
+            'end_date': '2023-12-31'
+        })
+        
+        self.assertEqual(response.status_code, 200)
+        data = response.json()
+        self.assertEqual(data['status'], 'success')
+        self.assertIn('edges', data['data'])
