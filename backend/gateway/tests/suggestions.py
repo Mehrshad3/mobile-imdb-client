@@ -67,7 +67,8 @@ class AdvancedSearchTests(TestCase):
         response = self.client.get('/api/search/advanced/', {
             'q': 'Godfather',
             'genre': 'Drama,Crime',
-            'min_rating': '8.5'
+            'min_rating': '8.5',
+            'cast': 'nm0000008,',
         })
         
         # چاپ خطاهای پنهان در صورت بروز مشکل
@@ -93,6 +94,9 @@ class AdvancedSearchTests(TestCase):
             'start_date': '2020-01-01',
             'end_date': '2023-12-31'
         })
+
+        if response.status_code != 200:
+            print("\n!!! ERROR DETAILS !!! :", response.json())
         
         self.assertEqual(response.status_code, 200)
         data = response.json()

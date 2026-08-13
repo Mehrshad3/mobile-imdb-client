@@ -52,6 +52,7 @@ class AdvancedSearchView(ImdbProxyBaseView):
         min_rating = request.GET.get('min_rating') # مثال: 7.5
         start_date = request.GET.get('start_date') # فرمت: YYYY-MM-DD
         end_date = request.GET.get('end_date') # فرمت: YYYY-MM-DD
+        cast_ids = request.GET.get('cast')
         
         # ۲. ساختاردهی متغیرهای GraphQL طبق استاندارد استخراج شده
         variables = {
@@ -84,6 +85,11 @@ class AdvancedSearchView(ImdbProxyBaseView):
             if end_date: date_range["end"] = end_date
             variables["releaseDateConstraint"] = {"releaseDateRange": date_range}
 
+        if cast_ids:
+            # تبدیل لیستی مثل "nm0634240,nm0608090" به دیکشنری‌های مجزا
+            credits_list = [{"nameId": n_id.strip()} for n_id in cast_ids.split(',')]
+            variables["titleCreditsConstraint"] = {"allCredits": credits_list}
+        
         # ۳. ساخت Payload نهایی
         payload = {
             "operationName": "AdvancedTitleSearch",
