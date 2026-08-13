@@ -8,6 +8,7 @@ urlpatterns = [
     path('admin/', admin.site.urls),
     path('', include('gateway.urls')),
     path('api/users/', include('users.urls')),
+    path('api/watch/', include('watch.urls')),
 ]
 
 if settings.DEBUG:
