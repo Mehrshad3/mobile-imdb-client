@@ -45,32 +45,36 @@ class AdvancedSearchView(ImdbProxyBaseView):
     def get(self, request):
         url = 'https://caching.graphql.imdb.com/'
         
-        # ۱. دریافت پارامترها از کلاینت (فلاتر)
+        # ۱. دریافت پارامترهای فیلتر از فلاتر
         query = request.GET.get('q')
-        title_type = request.GET.get('type') # مثال: movie, tvSeries
-        genre = request.GET.get('genre') # مثال: Drama, Action
-        min_rating = request.GET.get('min_rating') # مثال: 7.5
-        start_date = request.GET.get('start_date') # فرمت: YYYY-MM-DD
-        end_date = request.GET.get('end_date') # فرمت: YYYY-MM-DD
+        title_type = request.GET.get('type') 
+        genre = request.GET.get('genre')
+        min_rating = request.GET.get('min_rating')
+        start_date = request.GET.get('start_date')
+        end_date = request.GET.get('end_date')
         cast_ids = request.GET.get('cast')
         
-        # ۲. ساختاردهی متغیرهای GraphQL طبق استاندارد استخراج شده
+        # ۲. دریافت پارامترهای مرتب‌سازی (پیش‌فرض روی محبوب‌ترین آثار)
+        # مقادیر معتبر برای sort_by می‌تواند POPULARITY یا USER_RATING باشد
+        sort_by = request.GET.get('sort_by', 'POPULARITY').upper()
+        # مقادیر معتبر برای sort_order می‌تواند ASC (صعودی) یا DESC (نزولی) باشد
+        sort_order = request.GET.get('sort_order', 'ASC').upper()
+        
+        # ۳. ساختاردهی متغیرهای GraphQL
         variables = {
             "locale": "en-US",
-            "first": 50,
-            "sortBy": "POPULARITY",
-            "sortOrder": "ASC",
+            "first": 30, # تعداد نتایجی که می‌خواهی در هر ریکوئست برگردد
+            "sortBy": sort_by,
+            "sortOrder": sort_order,
         }
         
         if query:
             variables["titleTextConstraint"] = {"searchTerm": query}
             
         if title_type:
-            # می‌تواند شامل چند نوع با کاما باشد
             variables["titleTypeConstraint"] = {"anyTitleTypeIds": title_type.split(',')}
             
         if genre:
-            # حرف اول ژانرها در IMDb بزرگ است
             formatted_genres = [g.strip().capitalize() for g in genre.split(',')]
             variables["genreConstraint"] = {"allGenreIds": formatted_genres}
             
@@ -86,11 +90,10 @@ class AdvancedSearchView(ImdbProxyBaseView):
             variables["releaseDateConstraint"] = {"releaseDateRange": date_range}
 
         if cast_ids:
-            # تبدیل لیستی مثل "nm0634240,nm0608090" به دیکشنری‌های مجزا
             credits_list = [{"nameId": n_id.strip()} for n_id in cast_ids.split(',')]
             variables["titleCreditsConstraint"] = {"allCredits": credits_list}
-        
-        # ۳. ساخت Payload نهایی
+
+        # ۴. ساخت Payload نهایی
         payload = {
             "operationName": "AdvancedTitleSearch",
             "variables": variables,
@@ -103,12 +106,10 @@ class AdvancedSearchView(ImdbProxyBaseView):
         }
 
         try:
-            # دریافت هدرهای معتبر از Playwright
             request_headers = self.get_imdb_headers()
-            # این ریکوئست POST است، پس Content-Type الزامی است
             request_headers['content-type'] = 'application/json'
             
-            # فرض بر استفاده از cffi_requests طبق کدهای قبلی شما
+            # در اینجا از cffi_requests استفاده می‌کنیم (یا هر کتابخانه‌ای که در پروژه داری)
             response = cffi_requests.post(
                 url, 
                 headers=request_headers, 
@@ -118,19 +119,13 @@ class AdvancedSearchView(ImdbProxyBaseView):
             )
             
             if response.status_code != 200:
-                return JsonResponse({
-                    'status': 'error',
-                    'message': f"IMDb API Error: {response.status_code}",
-                    'details': response.text
-                }, status=502)
+                return JsonResponse({'error': f"IMDb API Error: {response.status_code}"}, status=502)
                 
-            # استخراج لیست نتایج
             data = response.json().get('data', {}).get('advancedTitleSearch', {})
-            return JsonResponse({'status': 'success', 'data': data}, status=200)
+            return JsonResponse({'results': data.get('edges', [])}, status=200)
             
         except Exception as e:
-            return JsonResponse({'status': 'error', 'message': str(e)}, status=500)
-
+            return JsonResponse({'error': str(e)}, status=500)
 
 class NameSuggestionView(View):
     def get(self, request):

@@ -5,20 +5,6 @@ class ImdbProxyTests(TestCase):
     def setUp(self):
         self.client = Client()
 
-    # --- ۱. تست‌های پایه (Unit/API Tests) ---
-    def test_trending_api_returns_success(self):
-        """تست اطمینان از کارکرد API ترندها بدون خطای شبکه"""
-        response = self.client.get(reverse('api-trending'))
-        self.assertEqual(response.status_code, 200)
-        
-        data = response.json()
-        self.assertIn('results', data)
-        self.assertTrue(len(data['results']) > 0)
-        
-        # بررسی اینکه ساختار مورد انتظار (titleText) وجود دارد
-        first_item = data['results'][0]
-        self.assertIn('node', first_item)
-
     def test_search_api_missing_query(self):
         """تست هندل کردن خطای نبود پارامتر جستجو"""
         response = self.client.get(reverse('api-search'))

@@ -63,7 +63,6 @@ class AdvancedSearchTests(TestCase):
         تست جستجوی پیشرفته: 
         بررسی عملکرد جستجو بر اساس کلمه کلیدی، ژانر، و حداقل امتیاز.
         """
-        # ارسال درخواست به سمت اندپوینت جستجوی پیشرفته
         response = self.client.get('/api/search/advanced/', {
             'q': 'Godfather',
             'genre': 'Drama,Crime',
@@ -74,16 +73,16 @@ class AdvancedSearchTests(TestCase):
         # چاپ خطاهای پنهان در صورت بروز مشکل
         if response.status_code != 200:
             print("\n!!! ERROR DETAILS !!! :", response.json())
-            
+ 
         self.assertEqual(response.status_code, 200)
         
-        json_response = response.json()
-        self.assertEqual(json_response['status'], 'success')
+        # دریافت خروجی آپدیت‌شده
+        data = response.json()
         
-        data = json_response['data']
-        # بررسی وجود لیست نتایج (edges)
-        self.assertIn('edges', data)
-        self.assertTrue(len(data['edges']) > 0, "لیست نتایج جستجوی پیشرفته نباید خالی باشد")
+        # بررسی وجود کلید results به جای status
+        self.assertIn('results', data)
+        self.assertTrue(len(data['results']) > 0, "لیست نتایج جستجوی پیشرفته نباید خالی باشد")
+
 
     def test_advanced_search_date_range(self):
         """
@@ -94,11 +93,9 @@ class AdvancedSearchTests(TestCase):
             'start_date': '2020-01-01',
             'end_date': '2023-12-31'
         })
-
-        if response.status_code != 200:
-            print("\n!!! ERROR DETAILS !!! :", response.json())
         
         self.assertEqual(response.status_code, 200)
         data = response.json()
-        self.assertEqual(data['status'], 'success')
-        self.assertIn('edges', data['data'])
+        
+        self.assertIn('results', data)
+        self.assertTrue(len(data['results']) > 0)
