@@ -11,4 +11,8 @@ urlpatterns = [
     path('playlists/', views.PlaylistListCreateView.as_view(), name='playlist-list-create'),
     path('playlists/<int:pk>/', views.PlaylistDetailView.as_view(), name='playlist-detail'),
     path('playlists/<int:playlist_id>/items/', views.PlaylistItemAddView.as_view(), name='playlist-item-add'),
+
+    # --- بخش علاقه‌مندی‌ها (Favorites - بخش ۱۶.۵) ---
+    path('favorites/', views.UserFavoriteListCreateView.as_view(), name='favorite-list-create'),
+    path('favorites/<str:imdb_id>/', views.UserFavoriteDestroyView.as_view(), name='favorite-destroy'),
 ]

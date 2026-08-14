@@ -4,7 +4,7 @@ from django.contrib.auth import get_user_model
 User = get_user_model()
 
 class UserTitle(models.Model):
-    """مدل مستقل برای نگهداری وضعیت تماشا، پیشرفت و اطلاعات هر فیلم/سریال برای کاربر"""
+    """مدل وضعیت تماشا و پیشرفت هر اثر برای کاربر"""
     STATUS_CHOICES = (
         ('plan_to_watch', 'قصد دارم تماشا کنم'),
         ('watching', 'در حال تماشا'),
@@ -24,8 +24,6 @@ class UserTitle(models.Model):
     
     # وضعیت تماشا و علاقه‌مندی (کاملاً مستقل)
     status = models.CharField(max_length=20, choices=STATUS_CHOICES, default='plan_to_watch')
-    is_favorite = models.BooleanField(default=False, verbose_name='مورد علاقه')
-    
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
 
@@ -35,7 +33,6 @@ class UserTitle(models.Model):
     def __str__(self):
         return f"{self.user.username} - {self.imdb_id} [{self.status}]"
 
-
 class WatchedEpisode(models.Model):
     """مدل ذخیره قسمت‌های تیک‌خورده برای سریال‌ها"""
     user_title = models.ForeignKey(UserTitle, on_delete=models.CASCADE, related_name='watched_episodes')
@@ -43,8 +40,47 @@ class WatchedEpisode(models.Model):
     episode_number = models.PositiveIntegerField()
     watched_at = models.DateTimeField(auto_now_add=True)
 
+
+class UserReview(models.Model):
+    """مدل واحد برای امتیازدهی (۱۳.۵)، ثبت نظر (۱۴.۵) و وضعیت اسپویل (۱۵.۵)"""
+    user = models.ForeignKey(User, on_delete=models.CASCADE, related_name='reviews')
+    imdb_id = models.CharField(max_length=20, verbose_name='شناسه IMDb')
+    
+    # امتیاز کیفی از ۱ تا ۵ ستاره (اختیاری)
+    score = models.PositiveIntegerField(
+        choices=[(i, str(i)) for i in range(1, 6)], 
+        blank=True, 
+        null=True, 
+        verbose_name='امتیاز'
+    )
+    
+    # متن نظر (اختیاری - کاربر ممکن است فقط ستاره بدهد یا فقط متن بنویسد)
+    text = models.TextField(blank=True, null=True, verbose_name='متن نظر')
+    
+    # مشخص کردن اسپویل بودن نظر
+    is_spoiler = models.BooleanField(default=False, verbose_name='دارای اسپویل')
+    
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
     class Meta:
-        unique_together = ('user_title', 'season_number', 'episode_number')
+        # هر کاربر برای هر اثر فقط می‌تواند یک رکوردِ نظر/امتیاز داشته باشد که قابل ویرایش است
+        unique_together = ('user', 'imdb_id')
+
+    def __str__(self):
+        return f"{self.user.username} - {self.imdb_id} [Score: {self.score}]"
+
+class UserFavorite(models.Model):
+    """بخش ۱۶.۵: فهرست جداگانه برای علاقه‌مندی‌ها"""
+    user = models.ForeignKey(User, on_delete=models.CASCADE, related_name='favorites')
+    imdb_id = models.CharField(max_length=20)
+    title_type = models.CharField(max_length=10, choices=(('movie', 'فیلم'), ('tv', 'سریال')))
+    title_name = models.CharField(max_length=255, blank=True)
+    poster_url = models.URLField(blank=True, null=True)
+    added_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        unique_together = ('user', 'imdb_id')
 
 
 class CustomPlaylist(models.Model):

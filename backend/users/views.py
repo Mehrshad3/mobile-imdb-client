@@ -10,8 +10,8 @@ from django.core.mail import send_mail
 
 from .serializers import UserRegistrationSerializer, UserProfileSerializer
 
-from watch.models import UserTitle
-from watch.serializers import UserTitleSerializer
+from watch.models import UserTitle, UserFavorite
+from watch.serializers import UserFavoriteSerializer
 
 User = get_user_model()
 
@@ -40,24 +40,19 @@ class ProfileView(generics.RetrieveUpdateAPIView):
         instance = self.get_object()
         serializer = self.get_serializer(instance)
         data = serializer.data
-
-        # ۱. استخراج و محاسبه پویای تعداد فیلم‌ها و سریال‌های مشاهده شده از اپلیکیشن watch
-        watched_movies_count = UserTitle.objects.filter(
+        
+        # ۱. محاسبه پویای تعداد فیلم‌ها و سریال‌های مشاهده شده از UserTitle
+        instance._watched_movies_count = UserTitle.objects.filter(
             user=instance, title_type='movie', status='completed'
         ).count()
 
-        watched_shows_count = UserTitle.objects.filter(
+        instance._watched_shows_count = UserTitle.objects.filter(
             user=instance, title_type='tv', status='completed'
         ).count()
 
-        # ۲. استخراج تمام آثاری که کاربر آن‌ها را به عنوان مورد علاقه (is_favorite=True) علامت زده است
-        favorite_titles = UserTitle.objects.filter(user=instance, is_favorite=True)
-        favorite_serialized = UserTitleSerializer(favorite_titles, many=True).data
-
-        # اضافه کردن این اطلاعات به خروجی نهایی JSON
-        data['watched_movies_count'] = watched_movies_count
-        data['watched_shows_count'] = watched_shows_count
-        data['favorite_items'] = favorite_serialized
+        # ۲. استخراج آثار مورد علاقه از جدول مستقلِ UserFavorite (بخش ۱۶.۵)
+        favorite_titles = UserFavorite.objects.filter(user=instance)
+        instance._favorite_items = UserFavoriteSerializer(favorite_titles, many=True).data
 
         return Response(data, status=status.HTTP_200_OK)
 

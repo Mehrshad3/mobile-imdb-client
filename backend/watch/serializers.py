@@ -1,5 +1,5 @@
 from rest_framework import serializers
-from .models import UserTitle, WatchedEpisode, CustomPlaylist, PlaylistItem
+from .models import UserTitle, WatchedEpisode, CustomPlaylist, PlaylistItem, UserReview, UserFavorite
 
 class WatchedEpisodeSerializer(serializers.ModelSerializer):
     class Meta:
@@ -11,6 +11,7 @@ class UserTitleSerializer(serializers.ModelSerializer):
     watched_count = serializers.SerializerMethodField()
     remaining_count = serializers.SerializerMethodField()
     progress_percentage = serializers.SerializerMethodField()
+    is_favorite = serializers.SerializerMethodField()
 
     class Meta:
         model = UserTitle
@@ -21,6 +22,12 @@ class UserTitleSerializer(serializers.ModelSerializer):
             'watched_episodes', 'updated_at'
         )
         read_only_fields = ('id', 'updated_at')
+
+    def get_is_favorite(self, obj):
+        request = self.context.get('request')
+        if request and request.user.is_authenticated:
+            return UserFavorite.objects.filter(user=request.user, imdb_id=obj.imdb_id).exists()
+        return False
 
     def get_watched_count(self, obj):
         if obj.title_type == 'movie':
@@ -38,6 +45,14 @@ class UserTitleSerializer(serializers.ModelSerializer):
         if obj.total_episodes == 0:
             return 0.0
         return round((self.get_watched_count(obj) / obj.total_episodes) * 100, 1)
+
+
+class UserFavoriteSerializer(serializers.ModelSerializer):
+    """سریالایزر برای لیست جداگانه علاقه‌مندی‌ها (بخش ۱۶.۵)"""
+    class Meta:
+        model = UserFavorite
+        fields = ('id', 'imdb_id', 'title_type', 'title_name', 'poster_url', 'added_at')
+        read_only_fields = ('id', 'added_at')
 
 
 class PlaylistItemSerializer(serializers.ModelSerializer):
@@ -60,3 +75,17 @@ class CustomPlaylistSerializer(serializers.ModelSerializer):
 
     def get_items_count(self, obj):
         return obj.items.count()
+
+
+class UserReviewSerializer(serializers.ModelSerializer):
+    """سریالایزر واحد برای امتیازدهی و نظرات (بخش‌های ۱۳.۵، ۱۴.۵ و ۱۵.۵)"""
+    username = serializers.ReadOnlyField(source='user.username')
+    profile_picture = serializers.ImageField(source='user.profile_picture', read_only=True)
+
+    class Meta:
+        model = UserReview
+        fields = (
+            'id', 'imdb_id', 'username', 'profile_picture', 
+            'score', 'text', 'is_spoiler', 'created_at', 'updated_at'
+        )
+        read_only_fields = ('id', 'created_at', 'updated_at')

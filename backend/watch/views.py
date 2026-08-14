@@ -2,8 +2,8 @@ from rest_framework import generics, status
 from rest_framework.response import Response
 from rest_framework.views import APIView
 from rest_framework.permissions import IsAuthenticated
-from .models import UserTitle, WatchedEpisode, CustomPlaylist, PlaylistItem
-from .serializers import UserTitleSerializer, CustomPlaylistSerializer, PlaylistItemSerializer
+from .models import UserTitle, WatchedEpisode, CustomPlaylist, UserFavorite
+from .serializers import UserTitleSerializer, CustomPlaylistSerializer, PlaylistItemSerializer, UserFavoriteSerializer
 
 # --- بخش مدیریت وضعیت تماشا (UserTitle) ---
 
@@ -37,6 +37,29 @@ class WatchItemDetailView(generics.RetrieveUpdateDestroyAPIView):
 
     def get_queryset(self):
         return UserTitle.objects.filter(user=self.request.user)
+
+
+class UserFavoriteListCreateView(generics.ListCreateAPIView):
+    """مشاهده لیست آثار مورد علاقه یا افزودن اثر جدید به علاقه‌مندی‌ها"""
+    serializer_class = UserFavoriteSerializer
+    permission_classes = (IsAuthenticated,)
+
+    def get_queryset(self):
+        return UserFavorite.objects.filter(user=self.request.user).order_by('-added_at')
+
+    def perform_create(self, serializer):
+        serializer.save(user=self.request.user)
+
+
+class UserFavoriteDestroyView(generics.DestroyAPIView):
+    """حذف یک اثر از لیست علاقه‌مندی‌ها بر اساس شناسه IMDb"""
+    serializer_class = UserFavoriteSerializer
+    permission_classes = (IsAuthenticated,)
+    lookup_field = 'imdb_id'
+    lookup_url_kwarg = 'imdb_id'
+
+    def get_queryset(self):
+        return UserFavorite.objects.filter(user=self.request.user)
 
 
 class ToggleEpisodeView(APIView):

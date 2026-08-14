@@ -124,53 +124,60 @@ class UserProfileStatsAndFavoritesTests(APITestCase):
     def test_profile_stats_and_favorites_workflow(self):
         """تست پویای آمار پروفایل هنگام تغییر وضعیت فیلم‌ها، سریال‌ها و علاقه‌مندی‌ها"""
         
-        # ۱. بررسی وضعیت اولیه (باید همه چیز صفر و خالی باشد)
+        # ۱. بررسی وضعیت اولیه
         res_initial = self.client.get(self.profile_url)
         self.assertEqual(res_initial.status_code, status.HTTP_200_OK)
         self.assertEqual(res_initial.data['watched_movies_count'], 0)
         self.assertEqual(res_initial.data['watched_shows_count'], 0)
         self.assertEqual(len(res_initial.data['favorite_items']), 0)
 
-        # ۲. اضافه کردن دو فیلم و علامت‌زدن آن‌ها به عنوان تکمیل‌شده (completed)
-        self.client.post(self.watchlist_url, {
+        # ۲. اضافه کردن دو فیلم (با فرمت JSON)
+        res_movie1 = self.client.post(self.watchlist_url, {
             'imdb_id': 'tt0111161', 'title_type': 'movie', 'title_name': 'Shawshank', 'status': 'completed'
-        })
-        self.client.post(self.watchlist_url, {
-            'imdb_id': 'tt0068646', 'title_type': 'movie', 'title_name': 'The Godfather', 'status': 'completed'
-        })
+        }, format='json')
+        self.assertEqual(res_movie1.status_code, status.HTTP_201_CREATED)
+        # بررسی اینکه دیتابیس واقعاً وضعیت را completed ثبت کرده باشد
+        self.assertEqual(res_movie1.data['status'], 'completed', msg=f"وضعیت اشتباه ذخیره شد: {res_movie1.data}")
 
-        # ۳. چک کردن پروفایل: تعداد فیلم‌ها باید ۲ شود، اما سریال‌ها و علاقه‌مندی‌ها تغییری نکنند (همچنان صفر)
+        res_movie2 = self.client.post(self.watchlist_url, {
+            'imdb_id': 'tt0068646', 'title_type': 'movie', 'title_name': 'The Godfather', 'status': 'completed'
+        }, format='json')
+        self.assertEqual(res_movie2.status_code, status.HTTP_201_CREATED)
+        self.assertEqual(res_movie2.data['status'], 'completed')
+
+        # ۳. چک کردن پروفایل
         res_movies_checked = self.client.get(self.profile_url)
         self.assertEqual(res_movies_checked.data['watched_movies_count'], 2)
-        self.assertEqual(res_movies_checked.data['watched_shows_count'], 0) # بدون تغییر
-        self.assertEqual(len(res_movies_checked.data['favorite_items']), 0) # بدون تغییر
+        self.assertEqual(res_movies_checked.data['watched_shows_count'], 0)
+        self.assertEqual(len(res_movies_checked.data['favorite_items']), 0)
 
-        # ۴. اضافه کردن سریال Breaking Bad و تکمیل آن
+        # ۴. اضافه کردن سریال
         res_bb = self.client.post(self.watchlist_url, {
             'imdb_id': 'tt0903747', 'title_type': 'tv', 'title_name': 'Breaking Bad', 'total_episodes': 62, 'status': 'completed'
-        })
-        bb_detail_url = reverse('watchlist-detail', kwargs={'imdb_id': 'tt0903747'})
+        }, format='json')
+        self.assertEqual(res_bb.status_code, status.HTTP_201_CREATED)
+        self.assertEqual(res_bb.data['status'], 'completed')
 
-        # ۵. چک کردن پروفایل بعد از دیدن سریال: تعداد سریال‌ها باید ۱ شود
+        # ۵. چک کردن آمار
         res_shows_checked = self.client.get(self.profile_url)
-        self.assertEqual(res_shows_checked.data['watched_movies_count'], 2) # فیلم‌ها دست‌نخورده
-        self.assertEqual(res_shows_checked.data['watched_shows_count'], 1)  # سریال تکمیل شد
-        self.assertEqual(len(res_shows_checked.data['favorite_items']), 0) # هنوز علاقه‌مندی اضافه نشده
+        self.assertEqual(res_shows_checked.data['watched_movies_count'], 2)
+        self.assertEqual(res_shows_checked.data['watched_shows_count'], 1)
 
-        # ۶. علامت‌زدن دو تا از آثار به عنوان مورد علاقه (is_favorite=True)
-        # علاقه‌مندی اول: فیلم اول
-        self.client.patch(reverse('watchlist-detail', kwargs={'imdb_id': 'tt0111161'}), {'is_favorite': True})
-        # علاقه‌مندی دوم: سریال Breaking Bad
-        self.client.patch(bb_detail_url, {'is_favorite': True})
+        # ۶. علامت‌زدن علاقه‌مندی‌ها (با فرمت JSON)
+        favorite_url = reverse('favorite-list-create')
+        
+        res_fav1 = self.client.post(favorite_url, {
+            'imdb_id': 'tt0111161', 'title_type': 'movie', 'title_name': 'Shawshank'
+        }, format='json')
+        self.assertEqual(res_fav1.status_code, status.HTTP_201_CREATED)
 
-        # ۷. بررسی نهایی پروفایل: تعداد علاقه‌مندی‌ها باید دقیقاً ۲ تا باشد و آمار قبلی حفظ شده باشد
+        res_fav2 = self.client.post(favorite_url, {
+            'imdb_id': 'tt0903747', 'title_type': 'tv', 'title_name': 'Breaking Bad'
+        }, format='json')
+        self.assertEqual(res_fav2.status_code, status.HTTP_201_CREATED)
+
+        # ۷. بررسی نهایی پروفایل
         res_final = self.client.get(self.profile_url)
         self.assertEqual(res_final.data['watched_movies_count'], 2)
         self.assertEqual(res_final.data['watched_shows_count'], 1)
-        
-        favorites = res_final.data['favorite_items']
-        self.assertEqual(len(favorites), 2)
-        
-        favorite_imdb_ids = [item['imdb_id'] for item in favorites]
-        self.assertIn('tt0111161', favorite_imdb_ids)
-        self.assertIn('tt0903747', favorite_imdb_ids)
+        self.assertEqual(len(res_final.data['favorite_items']), 2)

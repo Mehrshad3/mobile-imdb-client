@@ -2,6 +2,9 @@ from rest_framework import serializers
 from django.contrib.auth import get_user_model
 from django.contrib.auth.password_validation import validate_password
 
+from watch.models import UserTitle, UserFavorite
+from watch.serializers import UserFavoriteSerializer
+
 User = get_user_model()
 
 class UserRegistrationSerializer(serializers.ModelSerializer):
@@ -25,7 +28,6 @@ class UserRegistrationSerializer(serializers.ModelSerializer):
 
 
 class UserProfileSerializer(serializers.ModelSerializer):
-    # این فیلدها رو به صورت متد اضافه می‌کنیم تا از دیکشنری‌ای که ویو پاس می‌ده بخونن
     watched_movies_count = serializers.SerializerMethodField(read_only=True)
     watched_shows_count = serializers.SerializerMethodField(read_only=True)
     favorite_items = serializers.SerializerMethodField(read_only=True)
@@ -38,12 +40,18 @@ class UserProfileSerializer(serializers.ModelSerializer):
         )
         read_only_fields = ('id', 'email', 'username')
 
+    # محاسبه‌ها مستقیماً روی دیتابیس و با شیء اصلی (obj) انجام می‌شوند
     def get_watched_movies_count(self, obj):
-        # این مقدار توسط ویو (ProfileView) داخل context یا __dict__ قرار می‌گیره
-        return getattr(obj, '_watched_movies_count', 0)
+        return UserTitle.objects.filter(
+            user=obj, title_type='movie', status='completed'
+        ).count()
 
     def get_watched_shows_count(self, obj):
-        return getattr(obj, '_watched_shows_count', 0)
+        return UserTitle.objects.filter(
+            user=obj, title_type='tv', status='completed'
+        ).count()
 
     def get_favorite_items(self, obj):
-        return getattr(obj, '_favorite_items', [])
+        favorites = UserFavorite.objects.filter(user=obj).order_by('-added_at')
+        # ارسالِ context برای اطمینان از عملکردِ درستِ سریالایزرِ تو در تو
+        return UserFavoriteSerializer(favorites, many=True, context=self.context).data
