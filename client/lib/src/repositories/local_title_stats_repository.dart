@@ -4,11 +4,13 @@ import '../models/watchlist_item.dart';
 import '../storage/watchlist_store.dart';
 
 typedef UserWatchlistStoreFactory = WatchlistStore Function(MockUser user);
+typedef LocalUsersProvider = Future<List<MockUser>> Function();
 
 class LocalTitleStatsRepository {
-  const LocalTitleStatsRepository({this.storeForUser});
+  const LocalTitleStatsRepository({this.storeForUser, this.usersProvider});
 
   final UserWatchlistStoreFactory? storeForUser;
+  final LocalUsersProvider? usersProvider;
 
   Future<LocalTitleStats> statsForTitle(String titleId) async {
     final normalizedId = titleId.trim();
@@ -23,7 +25,8 @@ class LocalTitleStatsRepository {
     var watchedCount = 0;
     final reviews = <LocalTitleReview>[];
 
-    for (final user in MockUser.all) {
+    final users = usersProvider == null ? MockUser.all : await usersProvider!();
+    for (final user in users) {
       final storeFactory = storeForUser ?? _defaultWatchlistStoreForUser;
       final items = await storeFactory(user).read();
       final item = _find(items, normalizedId);

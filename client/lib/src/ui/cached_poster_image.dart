@@ -56,6 +56,19 @@ class _CachedPosterImageState extends State<CachedPosterImage> {
     return FutureBuilder<File?>(
       future: future,
       builder: (context, snapshot) {
+        if (snapshot.connectionState != ConnectionState.done) {
+          return SizedBox(
+            width: widget.width,
+            height: widget.height,
+            child: const Center(
+              child: SizedBox.square(
+                dimension: 18,
+                child: CircularProgressIndicator(strokeWidth: 2),
+              ),
+            ),
+          );
+        }
+
         final file = snapshot.data;
         if (file == null) {
           return widget.fallback;

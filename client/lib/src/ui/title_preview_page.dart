@@ -168,7 +168,11 @@ class _DetailsContent extends StatelessWidget {
     return ListView(
       padding: const EdgeInsets.all(16),
       children: [
-        _Header(bundle: bundle, watchlistRepository: watchlistRepository),
+        _Header(
+          bundle: bundle,
+          watchlistRepository: watchlistRepository,
+          authRepository: authRepository,
+        ),
         const SizedBox(height: 12),
         _WatchlistActions(
           bundle: bundle,
@@ -206,10 +210,15 @@ class _DetailsContent extends StatelessWidget {
 }
 
 class _Header extends StatelessWidget {
-  const _Header({required this.bundle, required this.watchlistRepository});
+  const _Header({
+    required this.bundle,
+    required this.watchlistRepository,
+    required this.authRepository,
+  });
 
   final TitleDetailsBundle bundle;
   final WatchlistRepository watchlistRepository;
+  final MockAuthRepository authRepository;
 
   @override
   Widget build(BuildContext context) {
@@ -239,6 +248,7 @@ class _Header extends StatelessWidget {
               _RatingLine(
                 bundle: bundle,
                 watchlistRepository: watchlistRepository,
+                authRepository: authRepository,
               ),
             ],
           ),
@@ -499,8 +509,9 @@ class _WatchlistActionsState extends State<_WatchlistActions> {
     );
   }
 
-  static const LocalTitleStatsRepository _statsRepository =
-      LocalTitleStatsRepository();
+  LocalTitleStatsRepository get _statsRepository => LocalTitleStatsRepository(
+    usersProvider: widget.authRepository.localUsers,
+  );
 }
 
 class _GuestDetailsPrompt extends StatelessWidget {
@@ -533,7 +544,7 @@ class _GuestDetailsPrompt extends StatelessWidget {
           ),
           const SizedBox(height: 8),
           const Text(
-            'مشاهده و جست‌وجو آزاد است. برای ذخیره لیست، امتیاز، نظر و پیشرفت قسمت‌ها وارد یکی از حساب‌های ماک شو.',
+            'مشاهده و جست‌وجو آزاد است. برای ذخیره لیست، امتیاز، نظر و پیشرفت قسمت‌ها وارد حساب کاربری شو.',
           ),
           const SizedBox(height: 10),
           Align(
@@ -541,7 +552,7 @@ class _GuestDetailsPrompt extends StatelessWidget {
             child: FilledButton.icon(
               onPressed: onLogin,
               icon: const Icon(Icons.login),
-              label: const Text('ورود ماک'),
+              label: const Text('ورود'),
             ),
           ),
         ],
@@ -827,10 +838,15 @@ class _ReviewDraft {
 }
 
 class _RatingLine extends StatefulWidget {
-  const _RatingLine({required this.bundle, required this.watchlistRepository});
+  const _RatingLine({
+    required this.bundle,
+    required this.watchlistRepository,
+    required this.authRepository,
+  });
 
   final TitleDetailsBundle bundle;
   final WatchlistRepository watchlistRepository;
+  final MockAuthRepository authRepository;
 
   @override
   State<_RatingLine> createState() => _RatingLineState();
@@ -843,6 +859,7 @@ class _RatingLineState extends State<_RatingLine> {
   void initState() {
     super.initState();
     widget.watchlistRepository.addListener(_reloadStats);
+    widget.authRepository.addListener(_reloadStats);
     _statsFuture = _statsRepository.statsForTitle(widget.bundle.id);
   }
 
@@ -853,6 +870,10 @@ class _RatingLineState extends State<_RatingLine> {
       oldWidget.watchlistRepository.removeListener(_reloadStats);
       widget.watchlistRepository.addListener(_reloadStats);
     }
+    if (oldWidget.authRepository != widget.authRepository) {
+      oldWidget.authRepository.removeListener(_reloadStats);
+      widget.authRepository.addListener(_reloadStats);
+    }
     if (oldWidget.bundle.id != widget.bundle.id) {
       _statsFuture = _statsRepository.statsForTitle(widget.bundle.id);
     }
@@ -861,6 +882,7 @@ class _RatingLineState extends State<_RatingLine> {
   @override
   void dispose() {
     widget.watchlistRepository.removeListener(_reloadStats);
+    widget.authRepository.removeListener(_reloadStats);
     super.dispose();
   }
 
@@ -873,8 +895,9 @@ class _RatingLineState extends State<_RatingLine> {
     });
   }
 
-  static const LocalTitleStatsRepository _statsRepository =
-      LocalTitleStatsRepository();
+  LocalTitleStatsRepository get _statsRepository => LocalTitleStatsRepository(
+    usersProvider: widget.authRepository.localUsers,
+  );
 
   @override
   Widget build(BuildContext context) {

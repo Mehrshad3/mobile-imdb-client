@@ -89,7 +89,10 @@ class TitleSummary {
         asInt(edge['currentRank']) ??
         asInt(edge['rank']);
 
-    return TitleSummary.fromTitleNode(titleNode, rank: rank);
+    final summary = TitleSummary.fromTitleNode(titleNode, rank: rank);
+    return summary.imageUrl == null
+        ? summary.copyWith(imageUrl: readImageUrl(edge))
+        : summary;
   }
 
   factory TitleSummary.fromAdvancedEdge(JsonMap edge) {
@@ -123,6 +126,34 @@ class TitleSummary {
   }
 
   bool get isValid => id.isNotEmpty && title.isNotEmpty;
+
+  TitleSummary copyWith({
+    String? id,
+    String? title,
+    String? type,
+    int? year,
+    int? endYear,
+    String? imageUrl,
+    int? rank,
+    String? subtitle,
+    double? rating,
+    int? voteCount,
+    bool? canHaveEpisodes,
+  }) {
+    return TitleSummary(
+      id: id ?? this.id,
+      title: title ?? this.title,
+      type: type ?? this.type,
+      year: year ?? this.year,
+      endYear: endYear ?? this.endYear,
+      imageUrl: imageUrl ?? this.imageUrl,
+      rank: rank ?? this.rank,
+      subtitle: subtitle ?? this.subtitle,
+      rating: rating ?? this.rating,
+      voteCount: voteCount ?? this.voteCount,
+      canHaveEpisodes: canHaveEpisodes ?? this.canHaveEpisodes,
+    );
+  }
 }
 
 int? _firstYear(String? value) {

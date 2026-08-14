@@ -372,9 +372,9 @@ class _HomePageState extends State<HomePage> {
               onLogout: _authRepository.logout,
             ),
             IconButton(
-              tooltip: 'API debug',
+              tooltip: 'جست‌وجوی پیشرفته',
               onPressed: _openDebugPage,
-              icon: const Icon(Icons.bug_report_outlined),
+              icon: const Icon(Icons.manage_search),
             ),
           ],
         ),
@@ -588,7 +588,7 @@ class _AccountAction extends StatelessWidget {
     final user = authRepository.currentUser;
     if (user == null) {
       return IconButton(
-        tooltip: 'ورود ماک',
+        tooltip: 'حساب کاربری',
         onPressed: onLogin,
         icon: const Icon(Icons.login),
       );
@@ -623,7 +623,7 @@ class _AccountAction extends StatelessWidget {
         const PopupMenuDivider(),
         const PopupMenuItem(
           value: _AccountMenuAction.switchUser,
-          child: Text('تغییر حساب'),
+          child: Text('حساب کاربری'),
         ),
         const PopupMenuItem(
           value: _AccountMenuAction.logout,
@@ -678,7 +678,7 @@ class _GuestAccessPrompt extends StatelessWidget {
             child: FilledButton.icon(
               onPressed: onLogin,
               icon: const Icon(Icons.login),
-              label: const Text('ورود با حساب ماک'),
+              label: const Text('ورود با حساب کاربری'),
             ),
           ),
         ],
@@ -826,7 +826,7 @@ class _WatchlistTab extends StatelessWidget {
             icon: Icons.bookmarks_outlined,
             title: 'لیست من مخصوص کاربران است',
             text:
-                'به عنوان مهمان می‌توانی جست‌وجو کنی و جزئیات فیلم‌ها و سریال‌ها را ببینی. برای ذخیره لیست، علاقه‌مندی، امتیاز، نظر و پیشرفت قسمت‌ها وارد یکی از حساب‌های ماک شو.',
+                'به عنوان مهمان می‌توانی جست‌وجو کنی و جزئیات فیلم‌ها و سریال‌ها را ببینی. برای ذخیره لیست، علاقه‌مندی، امتیاز، نظر و پیشرفت قسمت‌ها وارد حساب کاربری شو.',
             onLogin: onLogin,
           ),
         ],

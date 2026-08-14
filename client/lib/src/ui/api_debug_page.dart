@@ -50,7 +50,7 @@ class _ApiDebugPageState extends State<ApiDebugPage> {
 
   bool _loading = false;
   String? _error;
-  String _summary = 'برای تست API یکی از دکمه‌ها را بزن.';
+  String _summary = 'برای شروع، عنوان یا شناسه IMDb را وارد کن.';
   List<TitleSummary> _titles = const [];
   List<TitleDetails> _details = const [];
   List<Episode> _episodes = const [];
@@ -207,8 +207,7 @@ class _ApiDebugPageState extends State<ApiDebugPage> {
       );
       setState(() {
         _titles = titles;
-        _summary =
-            '${titles.length} نتیجه از AdvancedTitleSearch برای "$query" دریافت شد.';
+        _summary = '${titles.length} نتیجه پیشرفته برای "$query" دریافت شد.';
       });
     });
   }
@@ -285,7 +284,7 @@ class _ApiDebugPageState extends State<ApiDebugPage> {
       textDirection: TextDirection.rtl,
       child: Scaffold(
         appBar: AppBar(
-          title: const Text('هسته API IMDb'),
+          title: const Text('جست‌وجوی پیشرفته'),
           actions: [
             if (_loading)
               const Padding(
@@ -436,7 +435,7 @@ class _ControlPanel extends StatelessWidget {
               OutlinedButton.icon(
                 onPressed: onPressedTrending,
                 icon: const Icon(Icons.trending_up),
-                label: const Text('ترند'),
+                label: const Text('ترند امروز'),
               ),
               OutlinedButton.icon(
                 onPressed: onPressedAdvanced,

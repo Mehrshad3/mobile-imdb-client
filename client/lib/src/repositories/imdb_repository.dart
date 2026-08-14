@@ -126,8 +126,39 @@ class ImdbRepository {
     ];
   }
 
-  Future<List<TitleSummary>> trending({int first = 8}) {
-    return _apiClient.fetchTrending(first: first);
+  Future<List<TitleSummary>> trending({int first = 8}) async {
+    final titles = await _apiClient.fetchTrending(first: first);
+    if (titles.every((title) => title.imageUrl != null)) {
+      return titles;
+    }
+
+    try {
+      final ids = titles.map((title) => title.id).toList();
+      final details = await _apiClient.fetchTitleMetadata(ids);
+      final detailsById = {
+        for (final detail in details) detail.id: detail.toSummary(),
+      };
+      return [
+        for (final title in titles)
+          title.imageUrl == null && detailsById[title.id]?.imageUrl != null
+              ? title.copyWith(
+                  imageUrl: detailsById[title.id]!.imageUrl,
+                  rating: title.rating ?? detailsById[title.id]!.rating,
+                  voteCount:
+                      title.voteCount ?? detailsById[title.id]!.voteCount,
+                  canHaveEpisodes:
+                      title.canHaveEpisodes ||
+                      detailsById[title.id]!.canHaveEpisodes,
+                )
+              : title,
+      ];
+    } catch (error) {
+      imdbSearchDebugLog(
+        'Repository.trending metadata image fallback failed: '
+        '${debugErrorSummary(error)}',
+      );
+      return titles;
+    }
   }
 
   Future<List<TitleSummary>> advancedSearch(String query) async {
