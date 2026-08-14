@@ -23,13 +23,27 @@ class UserRegistrationSerializer(serializers.ModelSerializer):
         )
         return user
 
+
 class UserProfileSerializer(serializers.ModelSerializer):
+    # این فیلدها رو به صورت متد اضافه می‌کنیم تا از دیکشنری‌ای که ویو پاس می‌ده بخونن
+    watched_movies_count = serializers.SerializerMethodField(read_only=True)
+    watched_shows_count = serializers.SerializerMethodField(read_only=True)
+    favorite_items = serializers.SerializerMethodField(read_only=True)
+
     class Meta:
         model = User
         fields = (
-            'id', 'username', 'email', 'first_name', 'last_name', 
-            'bio', 'profile_picture', 'watched_movies_count', 
-            'watched_shows_count', 'favorite_items',
+            'id', 'username', 'email', 'bio', 'profile_picture', 
+            'watched_movies_count', 'watched_shows_count', 'favorite_items',
         )
-        # فیلدهای خودکار فقط خواندنی هستند تا کاربر دستی آن‌ها را تغییر ندهد
-        read_only_fields = ('email', 'watched_movies_count', 'watched_shows_count', 'favorite_items')
+        read_only_fields = ('id', 'email', 'username')
+
+    def get_watched_movies_count(self, obj):
+        # این مقدار توسط ویو (ProfileView) داخل context یا __dict__ قرار می‌گیره
+        return getattr(obj, '_watched_movies_count', 0)
+
+    def get_watched_shows_count(self, obj):
+        return getattr(obj, '_watched_shows_count', 0)
+
+    def get_favorite_items(self, obj):
+        return getattr(obj, '_favorite_items', [])

@@ -7,9 +7,14 @@ from django.contrib.auth.tokens import default_token_generator
 from django.utils.http import urlsafe_base64_encode, urlsafe_base64_decode
 from django.utils.encoding import force_bytes, force_str
 from django.core.mail import send_mail
+
 from .serializers import UserRegistrationSerializer, UserProfileSerializer
 
+from watch.models import UserTitle
+from watch.serializers import UserTitleSerializer
+
 User = get_user_model()
+
 
 class RegisterView(generics.CreateAPIView):
     """ثبت‌نام کاربر جدید (بخش ۱.۵)"""
@@ -17,15 +22,44 @@ class RegisterView(generics.CreateAPIView):
     permission_classes = (AllowAny,)
     serializer_class = UserRegistrationSerializer
 
+
 class ProfileView(generics.RetrieveUpdateAPIView):
-    """مشاهده و ویرایش پروفایل کاربر لاگین شده (بخش ۴.۵)"""
+    """
+    پایانه‌ی پروفایل کاربر:
+    - نمایش اطلاعات کاربر به همراه تعداد فیلم/سریال‌های دیده‌شده و لیست علاقه‌مندی‌ها
+    - امکان ویرایش پروفایل (مثل بیو و عکس پروفایل) با متد PATCH
+    """
     permission_classes = (IsAuthenticated,)
     serializer_class = UserProfileSerializer
 
     def get_object(self):
-        # برگرداندن کاربری که توکن به او تعلق دارد
         return self.request.user
 
+    def retrieve(self, request, *args, **kwargs):
+        # دریافت اطلاعات پیش‌فرض کاربر (از طریق سریالایزر اصلی پروفایل)
+        instance = self.get_object()
+        serializer = self.get_serializer(instance)
+        data = serializer.data
+
+        # ۱. استخراج و محاسبه پویای تعداد فیلم‌ها و سریال‌های مشاهده شده از اپلیکیشن watch
+        watched_movies_count = UserTitle.objects.filter(
+            user=instance, title_type='movie', status='completed'
+        ).count()
+
+        watched_shows_count = UserTitle.objects.filter(
+            user=instance, title_type='tv', status='completed'
+        ).count()
+
+        # ۲. استخراج تمام آثاری که کاربر آن‌ها را به عنوان مورد علاقه (is_favorite=True) علامت زده است
+        favorite_titles = UserTitle.objects.filter(user=instance, is_favorite=True)
+        favorite_serialized = UserTitleSerializer(favorite_titles, many=True).data
+
+        # اضافه کردن این اطلاعات به خروجی نهایی JSON
+        data['watched_movies_count'] = watched_movies_count
+        data['watched_shows_count'] = watched_shows_count
+        data['favorite_items'] = favorite_serialized
+
+        return Response(data, status=status.HTTP_200_OK)
 
 class PasswordResetRequestView(APIView):
     """درخواست بازیابی رمز عبور - ارسال ایمیل (بخش ۳.۵)"""

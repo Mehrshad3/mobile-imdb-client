@@ -65,7 +65,7 @@ class UserProfileAndAuthTests(APITestCase):
         self.login_url = reverse('token_obtain_pair') # آدرس لاگین
         self.profile_url = reverse('profile') # آدرس پروفایل
         
-        # یک عکس فیک (گیف ۱ پیکسلی) در حافظه موقت (بدون اشغال هارد) برای تست آپلود
+        # یک عکس فیک (گیف ۱ پیکسلی) در حافظه موقت برای تست آپلود
         self.dummy_image = SimpleUploadedFile(
             name='test_avatar.gif',
             content=b'\x47\x49\x46\x38\x39\x61\x01\x00\x01\x00\x00\xff\x00\x2c\x00\x00\x00\x00\x01\x00\x01\x00\x00\x02\x00\x3b',
@@ -73,33 +73,29 @@ class UserProfileAndAuthTests(APITestCase):
         )
 
     def test_user_login_and_get_token(self):
-        """تست ورود کاربر با ایمیل و رمز عبور (بخش ۲.۵)"""
+        """تست ورود کاربر با ایمیل و رمز عبور"""
         response = self.client.post(self.login_url, {
             'email': 'test@example.com',
             'password': 'StrongPassword123!'
         })
         
         self.assertEqual(response.status_code, status.HTTP_200_OK)
-        self.assertIn('access', response.data) # باید توکن دسترسی بدهد
-        self.assertIn('refresh', response.data) # باید توکن رفرش (۱ ماهه) بدهد
-        
-        # ذخیره توکن برای تست‌های بعدی
-        self.token = response.data['access']
+        self.assertIn('access', response.data)
+        self.assertIn('refresh', response.data)
 
     def test_view_and_update_profile(self):
-        """تست مشاهده و ویرایش پروفایل (بخش ۴.۵)"""
-        # ۱. ابتدا باید توکن را به هدر درخواست اضافه کنیم (احراز هویت)
-        # برای این کار مستقیماً یوزر را در کلاینت فورس می‌کنیم
+        """تست مشاهده و ویرایش پروفایل به همراه فیلدهای پویای جدید"""
         self.client.force_authenticate(user=self.user)
         
-        # ۲. مشاهده پروفایل (باید دیتای خالی بیو و آمار صفر را نشان دهد)
+        # ۱. مشاهده پروفایل و بررسی فیلدهای پویای جدید (آمار صفر و لیست خالی علاقه‌مندی‌ها)
         get_response = self.client.get(self.profile_url)
         self.assertEqual(get_response.status_code, status.HTTP_200_OK)
         self.assertEqual(get_response.data['email'], 'test@example.com')
-        self.assertEqual(get_response.data['watched_movies_count'], 0) # مقدار پیش‌فرض خودکار
+        self.assertEqual(get_response.data['watched_movies_count'], 0)
+        self.assertEqual(get_response.data['watched_shows_count'], 0)
+        self.assertEqual(get_response.data['favorite_items'], [])
         
-        # ۳. ویرایش پروفایل (آپلود عکس و افزودن بیو)
-        # نکته: وقتی فایل آپلود می‌کنیم، فرمت درخواست باید multipart باشد
+        # ۲. ویرایش پروفایل (آپلود عکس و افزودن بیو)
         update_data = {
             'bio': 'این یک توضیح کوتاه درباره من است.',
             'profile_picture': self.dummy_image
@@ -109,6 +105,72 @@ class UserProfileAndAuthTests(APITestCase):
         self.assertEqual(patch_response.status_code, status.HTTP_200_OK)
         self.assertEqual(patch_response.data['bio'], update_data['bio'])
         self.assertIsNotNone(patch_response.data['profile_picture'])
-        
-        # بررسی اینکه لینک دانلود عکس به درستی تولید شده باشد
         self.assertTrue(patch_response.data['profile_picture'].startswith('http'))
+
+
+class UserProfileStatsAndFavoritesTests(APITestCase):
+    def setUp(self):
+        # ساخت کاربر و احراز هویت
+        self.user = User.objects.create_user(
+            username='stats_tester',
+            email='stats@example.com',
+            password='password123'
+        )
+        self.client.force_authenticate(user=self.user)
+        
+        self.profile_url = reverse('profile')
+        self.watchlist_url = reverse('watchlist-list-create')
+
+    def test_profile_stats_and_favorites_workflow(self):
+        """تست پویای آمار پروفایل هنگام تغییر وضعیت فیلم‌ها، سریال‌ها و علاقه‌مندی‌ها"""
+        
+        # ۱. بررسی وضعیت اولیه (باید همه چیز صفر و خالی باشد)
+        res_initial = self.client.get(self.profile_url)
+        self.assertEqual(res_initial.status_code, status.HTTP_200_OK)
+        self.assertEqual(res_initial.data['watched_movies_count'], 0)
+        self.assertEqual(res_initial.data['watched_shows_count'], 0)
+        self.assertEqual(len(res_initial.data['favorite_items']), 0)
+
+        # ۲. اضافه کردن دو فیلم و علامت‌زدن آن‌ها به عنوان تکمیل‌شده (completed)
+        self.client.post(self.watchlist_url, {
+            'imdb_id': 'tt0111161', 'title_type': 'movie', 'title_name': 'Shawshank', 'status': 'completed'
+        })
+        self.client.post(self.watchlist_url, {
+            'imdb_id': 'tt0068646', 'title_type': 'movie', 'title_name': 'The Godfather', 'status': 'completed'
+        })
+
+        # ۳. چک کردن پروفایل: تعداد فیلم‌ها باید ۲ شود، اما سریال‌ها و علاقه‌مندی‌ها تغییری نکنند (همچنان صفر)
+        res_movies_checked = self.client.get(self.profile_url)
+        self.assertEqual(res_movies_checked.data['watched_movies_count'], 2)
+        self.assertEqual(res_movies_checked.data['watched_shows_count'], 0) # بدون تغییر
+        self.assertEqual(len(res_movies_checked.data['favorite_items']), 0) # بدون تغییر
+
+        # ۴. اضافه کردن سریال Breaking Bad و تکمیل آن
+        res_bb = self.client.post(self.watchlist_url, {
+            'imdb_id': 'tt0903747', 'title_type': 'tv', 'title_name': 'Breaking Bad', 'total_episodes': 62, 'status': 'completed'
+        })
+        bb_detail_url = reverse('watchlist-detail', kwargs={'imdb_id': 'tt0903747'})
+
+        # ۵. چک کردن پروفایل بعد از دیدن سریال: تعداد سریال‌ها باید ۱ شود
+        res_shows_checked = self.client.get(self.profile_url)
+        self.assertEqual(res_shows_checked.data['watched_movies_count'], 2) # فیلم‌ها دست‌نخورده
+        self.assertEqual(res_shows_checked.data['watched_shows_count'], 1)  # سریال تکمیل شد
+        self.assertEqual(len(res_shows_checked.data['favorite_items']), 0) # هنوز علاقه‌مندی اضافه نشده
+
+        # ۶. علامت‌زدن دو تا از آثار به عنوان مورد علاقه (is_favorite=True)
+        # علاقه‌مندی اول: فیلم اول
+        self.client.patch(reverse('watchlist-detail', kwargs={'imdb_id': 'tt0111161'}), {'is_favorite': True})
+        # علاقه‌مندی دوم: سریال Breaking Bad
+        self.client.patch(bb_detail_url, {'is_favorite': True})
+
+        # ۷. بررسی نهایی پروفایل: تعداد علاقه‌مندی‌ها باید دقیقاً ۲ تا باشد و آمار قبلی حفظ شده باشد
+        res_final = self.client.get(self.profile_url)
+        self.assertEqual(res_final.data['watched_movies_count'], 2)
+        self.assertEqual(res_final.data['watched_shows_count'], 1)
+        
+        favorites = res_final.data['favorite_items']
+        self.assertEqual(len(favorites), 2)
+        
+        favorite_imdb_ids = [item['imdb_id'] for item in favorites]
+        self.assertIn('tt0111161', favorite_imdb_ids)
+        self.assertIn('tt0903747', favorite_imdb_ids)
