@@ -124,17 +124,54 @@ String? readTitleText(Object? source) {
 String? readImageUrl(Object? source) {
   for (final path in const [
     ['primaryImage', 'url'],
+    ['primaryImage', 'imageUrl'],
+    ['primaryImage', 'urlWithSize'],
+    ['item', 'primaryImage', 'url'],
+    ['item', 'title', 'primaryImage', 'url'],
+    ['title', 'primaryImage', 'url'],
+    ['node', 'item', 'primaryImage', 'url'],
+    ['node', 'item', 'title', 'primaryImage', 'url'],
+    ['node', 'title', 'primaryImage', 'url'],
     ['i', 'imageUrl'],
     ['image', 'url'],
+    ['image', 'imageUrl'],
     ['imageUrl'],
     ['url'],
   ]) {
     final url = asString(readPath(source, path));
     if (url != null) {
-      return url;
+      return _normalizeImageUrl(url);
+    }
+  }
+  for (final path in const [
+    ['primaryImage'],
+    ['image'],
+    ['i'],
+  ]) {
+    final url = asString(readPath(source, path));
+    if (url != null) {
+      return _normalizeImageUrl(url);
     }
   }
   return null;
+}
+
+String? _normalizeImageUrl(String value) {
+  final trimmed = value.trim();
+  if (trimmed.isEmpty) {
+    return null;
+  }
+  if (trimmed.startsWith('//')) {
+    return 'https:$trimmed';
+  }
+  final uri = Uri.tryParse(trimmed);
+  if (uri == null || !uri.hasScheme || uri.host.isEmpty) {
+    return null;
+  }
+  if (uri.scheme == 'http') {
+    return uri.replace(scheme: 'https').toString();
+  }
+  return uri.toString();
 }
 
 String? formatDateParts({Object? day, Object? month, Object? year}) {

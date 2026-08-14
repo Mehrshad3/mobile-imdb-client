@@ -1,14 +1,30 @@
 import 'package:flutter/material.dart';
 
 import '../api/imdb_api_exception.dart';
+import '../api/imdb_error_messages.dart';
+import '../debug/imdb_search_debug_log.dart';
 import '../models/episode.dart';
 import '../models/series_overview.dart';
 import '../models/title_details.dart';
 import '../models/title_summary.dart';
 import '../repositories/imdb_repository.dart';
+import '../repositories/mock_auth_repository.dart';
+import '../repositories/watchlist_repository.dart';
+import '../storage/watchlist_store.dart';
+import 'cached_poster_image.dart';
+import 'title_preview_page.dart';
 
 class ApiDebugPage extends StatefulWidget {
-  const ApiDebugPage({super.key});
+  const ApiDebugPage({
+    super.key,
+    this.repository,
+    this.watchlistRepository,
+    this.authRepository,
+  });
+
+  final ImdbRepository? repository;
+  final WatchlistRepository? watchlistRepository;
+  final MockAuthRepository? authRepository;
 
   @override
   State<ApiDebugPage> createState() => _ApiDebugPageState();
@@ -16,6 +32,11 @@ class ApiDebugPage extends StatefulWidget {
 
 class _ApiDebugPageState extends State<ApiDebugPage> {
   late final ImdbRepository _repository;
+  late final bool _ownsRepository;
+  late final WatchlistRepository _watchlistRepository;
+  late final bool _ownsWatchlistRepository;
+  late final MockAuthRepository _authRepository;
+  late final bool _ownsAuthRepository;
 
   final TextEditingController _queryController = TextEditingController(
     text: 'young sheldon',
@@ -38,16 +59,54 @@ class _ApiDebugPageState extends State<ApiDebugPage> {
   @override
   void initState() {
     super.initState();
-    _repository = ImdbRepository();
+    _repository = widget.repository ?? ImdbRepository();
+    _ownsRepository = widget.repository == null;
+    _authRepository = widget.authRepository ?? MockAuthRepository();
+    _ownsAuthRepository = widget.authRepository == null;
+    _authRepository.addListener(_onAuthChanged);
+    _watchlistRepository =
+        widget.watchlistRepository ??
+        WatchlistRepository(
+          store: WatchlistStore(fileName: _watchlistFileName),
+        );
+    _ownsWatchlistRepository = widget.watchlistRepository == null;
+    _authRepository.load();
   }
 
   @override
   void dispose() {
-    _repository.close();
+    if (_ownsRepository) {
+      _repository.close();
+    }
+    _authRepository.removeListener(_onAuthChanged);
+    if (_ownsAuthRepository) {
+      _authRepository.dispose();
+    }
+    if (_ownsWatchlistRepository) {
+      _watchlistRepository.dispose();
+    }
     _queryController.dispose();
     _titleIdController.dispose();
     _seasonController.dispose();
     super.dispose();
+  }
+
+  void _onAuthChanged() {
+    if (_ownsWatchlistRepository) {
+      _watchlistRepository.switchStore(
+        WatchlistStore(fileName: _watchlistFileName),
+      );
+    }
+    if (mounted) {
+      setState(() {});
+    }
+  }
+
+  String get _watchlistFileName {
+    final user = _authRepository.currentUser;
+    return user == null
+        ? 'watchlist_guest.json'
+        : 'watchlist_${user.storageKey}.json';
   }
 
   Future<void> _run(Future<void> Function() action) async {
@@ -64,8 +123,12 @@ class _ApiDebugPageState extends State<ApiDebugPage> {
     try {
       await action();
     } on ImdbApiException catch (error) {
-      _setError(error.message);
+      imdbSearchDebugLog(
+        'ApiDebug.request ImdbApiException: ${debugErrorSummary(error)}',
+      );
+      _setError(friendlyErrorMessage(error));
     } catch (error) {
+      imdbSearchDebugLog('ApiDebug.request error: ${debugErrorSummary(error)}');
       _setError(error.toString());
     } finally {
       if (mounted) {
@@ -88,15 +151,25 @@ class _ApiDebugPageState extends State<ApiDebugPage> {
 
   Future<void> _search() {
     return _run(() async {
-      final query = _queryController.text;
-      final titles = await _repository.search(query);
+      final query = _effectiveSearchQuery(
+        queryController: _queryController,
+        titleIdController: _titleIdController,
+      );
+      if (query.isEmpty) {
+        throw const ImdbApiException('Search query or IMDb ID is required.');
+      }
+      imdbSearchDebugLog('ApiDebug.search pressed query="$query"');
+      final titles = await _repository.searchSmart(query);
       if (!mounted) {
         return;
       }
+      imdbSearchDebugLog(
+        'ApiDebug.search completed count=${titles.length} '
+        'ids=[${_debugTitleIds(titles)}]',
+      );
       setState(() {
         _titles = titles;
-        _summary =
-            '${titles.length} نتیجه از suggestion برای "$query" دریافت شد.';
+        _summary = '${titles.length} نتیجه برای "$query" دریافت شد.';
       });
     });
   }
@@ -116,11 +189,22 @@ class _ApiDebugPageState extends State<ApiDebugPage> {
 
   Future<void> _advancedSearch() {
     return _run(() async {
-      final query = _queryController.text;
+      final query = _effectiveSearchQuery(
+        queryController: _queryController,
+        titleIdController: _titleIdController,
+      );
+      if (query.isEmpty) {
+        throw const ImdbApiException('Search query or IMDb ID is required.');
+      }
+      imdbSearchDebugLog('ApiDebug.advancedSearch pressed query="$query"');
       final titles = await _repository.advancedSearch(query);
       if (!mounted) {
         return;
       }
+      imdbSearchDebugLog(
+        'ApiDebug.advancedSearch completed count=${titles.length} '
+        'ids=[${_debugTitleIds(titles)}]',
+      );
       setState(() {
         _titles = titles;
         _summary =
@@ -132,6 +216,7 @@ class _ApiDebugPageState extends State<ApiDebugPage> {
   Future<void> _metadata() {
     return _run(() async {
       final ids = _extractTitleIds(_titleIdController.text);
+      imdbSearchDebugLog('ApiDebug.metadata pressed ids=[$ids]');
       if (ids.isEmpty) {
         throw const ImdbApiException('حداقل یک شناسه مثل tt6226232 وارد کن.');
       }
@@ -140,6 +225,7 @@ class _ApiDebugPageState extends State<ApiDebugPage> {
       if (!mounted) {
         return;
       }
+      imdbSearchDebugLog('ApiDebug.metadata completed count=${details.length}');
       setState(() {
         _details = details;
         _titles = details.map((item) => item.toSummary()).toList();
@@ -175,6 +261,22 @@ class _ApiDebugPageState extends State<ApiDebugPage> {
         _summary = '${episodes.length} اپیزود برای فصل $season دریافت شد.';
       });
     });
+  }
+
+  void _openTitle(TitleSummary title) {
+    imdbSearchDebugLog(
+      'ApiDebug.openTitle push id=${title.id} title="${title.title}"',
+    );
+    Navigator.of(context).push(
+      MaterialPageRoute<void>(
+        builder: (_) => TitlePreviewPage(
+          summary: title,
+          repository: _repository,
+          watchlistRepository: _watchlistRepository,
+          authRepository: _authRepository,
+        ),
+      ),
+    );
   }
 
   @override
@@ -228,7 +330,8 @@ class _ApiDebugPageState extends State<ApiDebugPage> {
               ],
               if (_titles.isNotEmpty && _details.isEmpty) ...[
                 const SizedBox(height: 12),
-                for (final title in _titles) _TitleTile(title),
+                for (final title in _titles)
+                  _TitleTile(title: title, onTap: () => _openTitle(title)),
               ],
             ],
           ),
@@ -409,53 +512,63 @@ class _StatusPanel extends StatelessWidget {
 }
 
 class _TitleTile extends StatelessWidget {
-  const _TitleTile(this.title);
+  const _TitleTile({required this.title, required this.onTap});
 
   final TitleSummary title;
+  final VoidCallback onTap;
 
   @override
   Widget build(BuildContext context) {
-    return _ResultBox(
-      child: Row(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          _Poster(url: title.imageUrl),
-          const SizedBox(width: 12),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.stretch,
-              children: [
-                Text(
-                  title.title,
-                  style: Theme.of(context).textTheme.titleMedium,
-                ),
-                const SizedBox(height: 5),
-                Text(
-                  [
-                    title.id,
-                    if (title.type != null) title.type!,
-                    if (title.yearLabel.isNotEmpty) title.yearLabel,
-                    if (title.rank != null) 'Rank ${title.rank}',
-                  ].join(' · '),
-                  textDirection: TextDirection.ltr,
-                  style: Theme.of(context).textTheme.bodySmall,
-                ),
-                if (title.subtitle != null) ...[
+    return GestureDetector(
+      behavior: HitTestBehavior.opaque,
+      onTap: () {
+        imdbSearchDebugLog(
+          'ApiDebug.title tile tapped id=${title.id} title="${title.title}"',
+        );
+        onTap();
+      },
+      child: _ResultBox(
+        child: Row(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            _Poster(url: title.imageUrl),
+            const SizedBox(width: 12),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  Text(
+                    title.title,
+                    style: Theme.of(context).textTheme.titleMedium,
+                  ),
                   const SizedBox(height: 5),
                   Text(
-                    title.subtitle!,
-                    maxLines: 2,
-                    overflow: TextOverflow.ellipsis,
+                    [
+                      title.id,
+                      if (title.type != null) title.type!,
+                      if (title.yearLabel.isNotEmpty) title.yearLabel,
+                      if (title.rank != null) 'Rank ${title.rank}',
+                    ].join(' · '),
+                    textDirection: TextDirection.ltr,
+                    style: Theme.of(context).textTheme.bodySmall,
                   ),
+                  if (title.subtitle != null) ...[
+                    const SizedBox(height: 5),
+                    Text(
+                      title.subtitle!,
+                      maxLines: 2,
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                  ],
+                  if (title.ratingLabel.isNotEmpty) ...[
+                    const SizedBox(height: 5),
+                    Text('امتیاز: ${title.ratingLabel}'),
+                  ],
                 ],
-                if (title.ratingLabel.isNotEmpty) ...[
-                  const SizedBox(height: 5),
-                  Text('امتیاز: ${title.ratingLabel}'),
-                ],
-              ],
+              ),
             ),
-          ),
-        ],
+          ],
+        ),
       ),
     );
   }
@@ -618,12 +731,12 @@ class _Poster extends StatelessWidget {
 
     return ClipRRect(
       borderRadius: borderRadius,
-      child: Image.network(
-        url!,
+      child: CachedPosterImage(
+        url: url,
         width: 64,
         height: 92,
         fit: BoxFit.cover,
-        errorBuilder: (_, _, _) => _PosterFallback(borderRadius: borderRadius),
+        fallback: _PosterFallback(borderRadius: borderRadius),
       ),
     );
   }
@@ -673,9 +786,36 @@ List<String> _extractTitleIds(String value) {
   ).allMatches(value).map((match) => match.group(0)!).toSet().toList();
 }
 
+String _effectiveSearchQuery({
+  required TextEditingController queryController,
+  required TextEditingController titleIdController,
+}) {
+  final query = queryController.text.trim();
+  if (query.isNotEmpty) {
+    return query;
+  }
+
+  final imdbId = extractImdbTitleId(titleIdController.text);
+  if (imdbId != null) {
+    imdbSearchDebugLog(
+      'ApiDebug.search query field is empty; using title id field id=$imdbId',
+    );
+    return imdbId;
+  }
+
+  return query;
+}
+
 String _episodeNumber(int? season, int? episode) {
   if (season == null || episode == null) {
     return '-';
   }
   return 'S$season E$episode';
+}
+
+String _debugTitleIds(List<TitleSummary> titles) {
+  if (titles.isEmpty) {
+    return '';
+  }
+  return titles.take(8).map((title) => title.id).join(', ');
 }

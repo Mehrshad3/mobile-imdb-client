@@ -79,7 +79,9 @@ class TitleSummary {
 
   factory TitleSummary.fromTrendingEdge(JsonMap edge) {
     final node = asMap(edge['node']) ?? edge;
-    final titleNode = asMap(node['item']) ?? asMap(node['title']) ?? node;
+    final itemNode = asMap(node['item']);
+    final titleNode =
+        asMap(itemNode?['title']) ?? itemNode ?? asMap(node['title']) ?? node;
     final rank =
         asInt(node['currentRank']) ??
         asInt(node['rank']) ??

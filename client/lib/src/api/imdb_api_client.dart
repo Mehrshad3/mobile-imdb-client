@@ -29,6 +29,7 @@ class ImdbApiClient {
 
   final HttpClient _httpClient;
   final Duration timeout;
+  final Map<String, _JsonCacheEntry> _jsonCache = {};
 
   static const Map<String, String> defaultHeaders = {
     'Accept': 'application/graphql+json, application/json',
@@ -295,6 +296,12 @@ class ImdbApiClient {
   }
 
   Future<JsonMap> _sendJson(String method, Uri uri, {String? body}) async {
+    final cacheKey = '$method $uri ${body ?? ''}';
+    final cached = _jsonCache[cacheKey];
+    if (cached != null && !cached.isExpired) {
+      return cached.json;
+    }
+
     try {
       final request = await _httpClient.openUrl(method, uri).timeout(timeout);
       defaultHeaders.forEach(request.headers.set);
@@ -337,6 +344,7 @@ class ImdbApiClient {
         );
       }
 
+      _jsonCache[cacheKey] = _JsonCacheEntry(json);
       return json;
     } on ImdbApiException {
       rethrow;
@@ -413,4 +421,15 @@ class ImdbApiClient {
     }
     return '${value.substring(0, maxLength)}...';
   }
+}
+
+class _JsonCacheEntry {
+  _JsonCacheEntry(this.json) : createdAt = DateTime.now();
+
+  static const Duration ttl = Duration(minutes: 15);
+
+  final JsonMap json;
+  final DateTime createdAt;
+
+  bool get isExpired => DateTime.now().difference(createdAt) > ttl;
 }
