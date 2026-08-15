@@ -8,7 +8,7 @@ import '../models/series_overview.dart';
 import '../models/title_details.dart';
 import '../models/title_summary.dart';
 import '../repositories/imdb_repository.dart';
-import '../repositories/mock_auth_repository.dart';
+import '../repositories/django_auth_repository.dart';
 import '../repositories/watchlist_repository.dart';
 import '../storage/watchlist_store.dart';
 import 'cached_poster_image.dart';
@@ -24,7 +24,7 @@ class ApiDebugPage extends StatefulWidget {
 
   final ImdbRepository? repository;
   final WatchlistRepository? watchlistRepository;
-  final MockAuthRepository? authRepository;
+  final DjangoAuthRepository? authRepository;
 
   @override
   State<ApiDebugPage> createState() => _ApiDebugPageState();
@@ -35,7 +35,7 @@ class _ApiDebugPageState extends State<ApiDebugPage> {
   late final bool _ownsRepository;
   late final WatchlistRepository _watchlistRepository;
   late final bool _ownsWatchlistRepository;
-  late final MockAuthRepository _authRepository;
+  late final DjangoAuthRepository _authRepository;
   late final bool _ownsAuthRepository;
 
   final TextEditingController _queryController = TextEditingController(
@@ -61,7 +61,7 @@ class _ApiDebugPageState extends State<ApiDebugPage> {
     super.initState();
     _repository = widget.repository ?? ImdbRepository();
     _ownsRepository = widget.repository == null;
-    _authRepository = widget.authRepository ?? MockAuthRepository();
+    _authRepository = widget.authRepository ?? DjangoAuthRepository();
     _ownsAuthRepository = widget.authRepository == null;
     _authRepository.addListener(_onAuthChanged);
     _watchlistRepository =

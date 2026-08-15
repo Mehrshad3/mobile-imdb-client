@@ -7,7 +7,7 @@ import '../models/personal_list.dart';
 import '../models/title_summary.dart';
 import '../models/watchlist_item.dart';
 import '../repositories/imdb_repository.dart';
-import '../repositories/mock_auth_repository.dart';
+import '../repositories/django_auth_repository.dart';
 import '../repositories/personal_list_repository.dart';
 import '../repositories/watchlist_repository.dart';
 import '../storage/personal_list_store.dart';
@@ -30,7 +30,7 @@ class HomePage extends StatefulWidget {
   final ImdbRepository? repository;
   final WatchlistRepository? watchlistRepository;
   final PersonalListRepository? personalListRepository;
-  final MockAuthRepository? authRepository;
+  final DjangoAuthRepository? authRepository;
   final bool autoLoad;
 
   @override
@@ -44,7 +44,7 @@ class _HomePageState extends State<HomePage> {
   late final bool _ownsWatchlistRepository;
   late final PersonalListRepository _personalListRepository;
   late final bool _ownsPersonalListRepository;
-  late final MockAuthRepository _authRepository;
+  late final DjangoAuthRepository _authRepository;
   late final bool _ownsAuthRepository;
   late Future<void> _watchlistFuture;
   late Future<void> _personalListFuture;
@@ -74,7 +74,7 @@ class _HomePageState extends State<HomePage> {
     super.initState();
     _repository = widget.repository ?? ImdbRepository();
     _ownsRepository = widget.repository == null;
-    _authRepository = widget.authRepository ?? MockAuthRepository();
+    _authRepository = widget.authRepository ?? DjangoAuthRepository();
     _ownsAuthRepository = widget.authRepository == null;
     _authRepository.addListener(_onAuthChanged);
     _watchlistRepository =
@@ -579,7 +579,7 @@ class _AccountAction extends StatelessWidget {
     required this.onLogout,
   });
 
-  final MockAuthRepository authRepository;
+  final DjangoAuthRepository authRepository;
   final VoidCallback onLogin;
   final VoidCallback onLogout;
 
@@ -799,7 +799,7 @@ class _WatchlistTab extends StatelessWidget {
     required this.onOpenTitle,
   });
 
-  final MockAuthRepository authRepository;
+  final DjangoAuthRepository authRepository;
   final WatchlistRepository repository;
   final Future<void> loadFuture;
   final PersonalListRepository personalListRepository;

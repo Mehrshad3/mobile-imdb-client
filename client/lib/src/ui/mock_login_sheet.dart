@@ -3,11 +3,11 @@ import 'package:flutter/material.dart';
 import '../api/email_otp_service.dart';
 import '../models/mock_user.dart';
 import '../models/user_account.dart';
-import '../repositories/mock_auth_repository.dart';
+import '../repositories/django_auth_repository.dart';
 
 Future<void> showMockLoginSheet(
   BuildContext context,
-  MockAuthRepository authRepository,
+  DjangoAuthRepository authRepository,
 ) {
   return showModalBottomSheet<void>(
     context: context,
@@ -28,7 +28,7 @@ Future<void> showMockLoginSheet(
 class _AuthSheet extends StatefulWidget {
   const _AuthSheet({required this.authRepository});
 
-  final MockAuthRepository authRepository;
+  final DjangoAuthRepository authRepository;
 
   @override
   State<_AuthSheet> createState() => _AuthSheetState();

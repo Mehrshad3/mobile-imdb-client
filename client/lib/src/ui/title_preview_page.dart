@@ -11,7 +11,7 @@ import '../models/title_summary.dart';
 import '../models/watchlist_item.dart';
 import '../repositories/imdb_repository.dart';
 import '../repositories/local_title_stats_repository.dart';
-import '../repositories/mock_auth_repository.dart';
+import '../repositories/django_auth_repository.dart';
 import '../repositories/watchlist_repository.dart';
 import '../storage/watchlist_store.dart';
 import 'cached_poster_image.dart';
@@ -29,7 +29,7 @@ class TitlePreviewPage extends StatefulWidget {
   final TitleSummary summary;
   final ImdbRepository repository;
   final WatchlistRepository? watchlistRepository;
-  final MockAuthRepository? authRepository;
+  final DjangoAuthRepository? authRepository;
 
   @override
   State<TitlePreviewPage> createState() => _TitlePreviewPageState();
@@ -39,13 +39,13 @@ class _TitlePreviewPageState extends State<TitlePreviewPage> {
   late final Future<TitleDetailsBundle> _bundleFuture;
   late final WatchlistRepository _watchlistRepository;
   late final bool _ownsWatchlistRepository;
-  late final MockAuthRepository _authRepository;
+  late final DjangoAuthRepository _authRepository;
   late final bool _ownsAuthRepository;
 
   @override
   void initState() {
     super.initState();
-    _authRepository = widget.authRepository ?? MockAuthRepository();
+    _authRepository = widget.authRepository ?? DjangoAuthRepository();
     _ownsAuthRepository = widget.authRepository == null;
     _authRepository.addListener(_onAuthChanged);
     _watchlistRepository =
@@ -160,7 +160,7 @@ class _DetailsContent extends StatelessWidget {
   final TitleDetailsBundle bundle;
   final ImdbRepository repository;
   final WatchlistRepository watchlistRepository;
-  final MockAuthRepository authRepository;
+  final DjangoAuthRepository authRepository;
   final bool loading;
 
   @override
@@ -218,7 +218,7 @@ class _Header extends StatelessWidget {
 
   final TitleDetailsBundle bundle;
   final WatchlistRepository watchlistRepository;
-  final MockAuthRepository authRepository;
+  final DjangoAuthRepository authRepository;
 
   @override
   Widget build(BuildContext context) {
@@ -267,7 +267,7 @@ class _WatchlistActions extends StatefulWidget {
 
   final TitleDetailsBundle bundle;
   final WatchlistRepository repository;
-  final MockAuthRepository authRepository;
+  final DjangoAuthRepository authRepository;
 
   @override
   State<_WatchlistActions> createState() => _WatchlistActionsState();
@@ -846,7 +846,7 @@ class _RatingLine extends StatefulWidget {
 
   final TitleDetailsBundle bundle;
   final WatchlistRepository watchlistRepository;
-  final MockAuthRepository authRepository;
+  final DjangoAuthRepository authRepository;
 
   @override
   State<_RatingLine> createState() => _RatingLineState();
@@ -946,7 +946,7 @@ class _SeriesSection extends StatefulWidget {
   final TitleDetailsBundle bundle;
   final ImdbRepository repository;
   final WatchlistRepository watchlistRepository;
-  final MockAuthRepository authRepository;
+  final DjangoAuthRepository authRepository;
 
   @override
   State<_SeriesSection> createState() => _SeriesSectionState();
