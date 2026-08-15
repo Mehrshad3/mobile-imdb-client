@@ -9,6 +9,7 @@ from django.utils.encoding import force_bytes, force_str
 from django.core.mail import send_mail
 
 from .serializers import UserRegistrationSerializer, UserProfileSerializer
+from .services import OTPRequest, OTPService
 
 from watch.models import UserTitle, UserFavorite
 from watch.serializers import UserFavoriteSerializer
@@ -16,11 +17,60 @@ from watch.serializers import UserFavoriteSerializer
 User = get_user_model()
 
 
-class RegisterView(generics.CreateAPIView):
-    """ثبت‌نام کاربر جدید (بخش ۱.۵)"""
-    queryset = User.objects.all()
-    permission_classes = (AllowAny,)
-    serializer_class = UserRegistrationSerializer
+class RequestOTPView(APIView):
+    """
+    یک پایانه‌ی عمومی برای درخواست ارسال کد یک‌بار مصرف
+    """
+    def post(self, request):
+        email = request.data.get('email')
+        
+        if not email:
+            return Response({'error': 'ایمیل الزامی است.'}, status=status.HTTP_400_BAD_REQUEST)
+
+        # اگر بخواهی این پایانه کاملاً عمومی باشد (مثلاً برای بازیابی رمز هم کار کند)،
+        # می‌توانی چک کردنِ "تکراری بودن ایمیل" را به فرانت‌اند یا لایه‌های دیگر بسپاری، 
+        # اما فعلاً برای سادگیِ ثبت‌نام، همین‌جا چک می‌کنیم:
+        if User.objects.filter(email=email).exists():
+            return Response({'error': 'این ایمیل قبلاً در سیستم ثبت شده است.'}, status=status.HTTP_400_BAD_REQUEST)
+
+        # ارسال کد
+        OTPService.send_registration_otp(email)
+
+        return Response({'message': 'کد تایید با موفقیت ارسال شد.'}, status=status.HTTP_200_OK)
+
+
+class RegisterView(APIView):
+    """
+    پایانه‌ی اصلی ثبت‌نام (که حالا در دل خودش OTP را هم چک می‌کند)
+    """
+    def post(self, request):
+        email = request.data.get('email')
+        otp = request.data.get('otp')
+        username = request.data.get('username')
+        password = request.data.get('password')
+
+        if not all([email, otp, username, password]):
+            return Response({'error': 'تمام فیلدها (ایمیل، کد، نام کاربری، رمز عبور) الزامی هستند.'}, status=status.HTTP_400_BAD_REQUEST)
+
+        try:
+            otp_req = OTPRequest.objects.get(email=email)
+        except OTPRequest.DoesNotExist:
+            return Response({'error': 'کد تاییدی یافت نشد.'}, status=status.HTTP_404_NOT_FOUND)
+
+        if not otp_req.is_valid():
+            return Response({'error': 'کد تایید منقضی شده است.'}, status=status.HTTP_400_BAD_REQUEST)
+
+        if otp_req.otp_code != str(otp).strip():
+            return Response({'error': 'کد تایید اشتباه است.'}, status=status.HTTP_400_BAD_REQUEST)
+
+        if User.objects.filter(username=username).exists():
+            return Response({'error': 'این نام کاربری قبلاً گرفته شده است.'}, status=status.HTTP_400_BAD_REQUEST)
+
+        # ساخت کاربر
+        user = User.objects.create_user(username=username, email=email, password=password)
+        otp_req.delete()
+
+        return Response({'message': 'ثبت‌نام با موفقیت انجام شد.'}, status=status.HTTP_201_CREATED)
 
 
 class ProfileView(generics.RetrieveUpdateAPIView):

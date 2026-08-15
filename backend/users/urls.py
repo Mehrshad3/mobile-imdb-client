@@ -4,6 +4,7 @@ from . import views
 
 urlpatterns = [
     # ثبت‌نام
+    path('otp/request/', views.RequestOTPView.as_view(), name='request_otp'),
     path('register/', views.RegisterView.as_view(), name='register'),
     
     # ورود و خروج (بخش ۲.۵)
