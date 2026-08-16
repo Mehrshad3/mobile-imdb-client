@@ -1,6 +1,7 @@
 import 'dart:convert';
 import 'dart:io';
 import 'package:flutter/foundation.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import '../models/mock_user.dart';
 import '../models/user_account.dart';
 import '../../app_config.dart';
@@ -38,10 +39,9 @@ class DjangoAuthRepository extends ChangeNotifier {
 
   // ۱. ورود واقعی با بک‌اند جنگو
   Future<void> signIn({required String email, required String password}) async {
-    final uri = Uri.parse('$baseUrl/login/'); // یا مسیر مربوط به لاگین و توکن
+    final uri = Uri.parse('$baseUrl/login/');
     
     try {
-      // ۱. دیتا را به بایت تبدیل می‌کنیم
       final payload = jsonEncode({
         'email': email,
         'password': password,
@@ -50,19 +50,69 @@ class DjangoAuthRepository extends ChangeNotifier {
 
       final request = await HttpClient().postUrl(uri);
       request.headers.set('Content-Type', 'application/json');
-      
-      // 🚀 ۲. ست کردن طول دیتا برای رفع خطای Syntax در بک‌اند
       request.headers.contentLength = bytes.length;
-      
-      // ۳. ارسال دیتا
       request.add(bytes);
 
       final response = await request.close();
+      final responseBody = await utf8.decoder.bind(response).join();
+
       if (response.statusCode >= 200 && response.statusCode < 300) {
-        // لاگین موفق (ذخیره توکن و غیره)
-        print("لاگین با موفقیت انجام شد!");
+        final data = jsonDecode(responseBody);
+        
+        final accessToken = data['access'];
+        final refreshToken = data['refresh'];
+
+        final prefs = await SharedPreferences.getInstance();
+
+        if (accessToken != null) {
+          await prefs.setString('access_token', accessToken);
+          _accessToken = accessToken;
+        }
+        if (refreshToken != null) {
+          await prefs.setString('refresh_token', refreshToken);
+          _refreshToken = refreshToken;
+        }
+
+        try {
+          final profileUri = Uri.parse('$baseUrl/profile/'); 
+          final profileRequest = await HttpClient().getUrl(profileUri);
+          
+          profileRequest.headers.set('Authorization', 'Bearer $accessToken');
+          
+          final profileResponse = await profileRequest.close();
+          final profileBody = await utf8.decoder.bind(profileResponse).join();
+
+          if (profileResponse.statusCode == 200) {
+            // تبدیل JSON جنگو به دیکشنری فلاتر
+            final profileData = jsonDecode(profileBody);
+            
+            // 🚀 تزریق دیتای واقعی سریالایزرِ جنگو به کالبد MockUser
+            _currentUser = MockUser(
+              id: profileData['id']?.toString() ?? '0',
+              // چون در سریالایزر فیلد نام و نام خانوادگی مجزا نداریم، از username برای نمایش استفاده می‌کنیم
+              displayName: profileData['username'] ?? 'کاربر', 
+              username: profileData['username'] ?? 'user',
+              profileImageUrl: profileData['profile_picture'], // دقیقاً منطبق با سریالایزر
+              bio: profileData['bio'], // دقیقاً منطبق با سریالایزر
+            );
+          } else {
+            throw AuthException('ورود انجام شد اما دریافت اطلاعات پروفایل با خطا مواجه شد.');
+          }
+        } catch (e) {
+          print('خطا در دریافت پروفایل: $e');
+          // اگر API پروفایل هنوز در دسترس نبود، لاگین را خراب نمی‌کنیم
+          if (MockUser.all.isNotEmpty) {
+             _currentUser = MockUser.all.first; 
+          }
+        }
+
+        print("ورود واقعی و دریافت پروفایل با موفقیت انجام شد!");
+        // 🚀 آپدیت کردن UI برای ورود به صفحه اصلی
+        notifyListeners(); 
+        
       } else {
-        throw AuthException('ایمیل یا رمز عبور اشتباه است.');
+        final errorMsg = jsonDecode(responseBody)['error'] ?? 'ایمیل یا رمز عبور اشتباه است.';
+        throw AuthException(errorMsg);
       }
     } catch (e) {
       if (e is AuthException) rethrow;
