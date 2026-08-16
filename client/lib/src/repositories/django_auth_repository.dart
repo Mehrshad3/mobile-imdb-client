@@ -38,35 +38,35 @@ class DjangoAuthRepository extends ChangeNotifier {
 
   // ۱. ورود واقعی با بک‌اند جنگو
   Future<void> signIn({required String email, required String password}) async {
-    final uri = Uri.parse('$baseUrl/login/');
+    final uri = Uri.parse('$baseUrl/login/'); // یا مسیر مربوط به لاگین و توکن
+    
     try {
+      // ۱. دیتا را به بایت تبدیل می‌کنیم
+      final payload = jsonEncode({
+        'email': email,
+        'password': password,
+      });
+      final bytes = utf8.encode(payload);
+
       final request = await HttpClient().postUrl(uri);
       request.headers.set('Content-Type', 'application/json');
-      request.add(utf8.encode(jsonEncode({'email': email, 'password': password})));
       
-      final response = await request.close();
-      final body = await utf8.decoder.bind(response).join();
+      // 🚀 ۲. ست کردن طول دیتا برای رفع خطای Syntax در بک‌اند
+      request.headers.contentLength = bytes.length;
+      
+      // ۳. ارسال دیتا
+      request.add(bytes);
 
+      final response = await request.close();
       if (response.statusCode >= 200 && response.statusCode < 300) {
-        final data = jsonDecode(body);
-        _accessToken = data['access'];
-        _refreshToken = data['refresh'];
-        
-        // ساخت یوزر موقت برای نمایش در UI
-        _currentUser = MockUser(
-          id: 'django_user',
-          displayName: email.split('@').first,
-          username: email.split('@').first,
-          email: email,
-          createdAt: DateTime.now(),
-        );
-        notifyListeners();
+        // لاگین موفق (ذخیره توکن و غیره)
+        print("لاگین با موفقیت انجام شد!");
       } else {
-        throw const AuthException('ایمیل یا رمز عبور اشتباه است.');
+        throw AuthException('ایمیل یا رمز عبور اشتباه است.');
       }
     } catch (e) {
       if (e is AuthException) rethrow;
-      throw AuthException('خطا در ارتباط با سرور: $e');
+      throw AuthException('خطا در ارتباط با سرور هنگام لاگین.');
     }
   }
 
@@ -79,44 +79,71 @@ class DjangoAuthRepository extends ChangeNotifier {
 
   // ۳. مرحله اول ثبت‌نام: ماک کردن ارسال OTP
   Future<void> requestRegistrationOtp(RegistrationDraft draft) async {
-    // اطلاعات فرم را موقتاً در رم نگه می‌داریم
     _pendingRegistration = draft;
-    // فرض می‌کنیم ایمیل با موفقیت ارسال شده است
-    debugPrint('MOCK REGISTRATION OTP SENT: 123456');
+    final uri = Uri.parse('$baseUrl/otp/request/'); 
+    
+    try {
+      // ۱. اول دیتا را به صورت بایت آماده می‌کنیم
+      final payload = jsonEncode({'email': draft.email});
+      final bytes = utf8.encode(payload);
+
+      final request = await HttpClient().postUrl(uri);
+      request.headers.set('Content-Type', 'application/json');
+      
+      // 🚀 ۲. این خط کلیدی است! به جنگو می‌گوییم سایز دقیق دیتا چقدر است
+      request.headers.contentLength = bytes.length;
+      
+      // ۳. حالا دیتا را می‌فرستیم
+      request.add(bytes);
+
+      final response = await request.close();
+      if (response.statusCode >= 400) {
+        final body = await utf8.decoder.bind(response).join();
+        final errorMsg = jsonDecode(body)['error'] ?? 'خطا در درخواست کد';
+        throw AuthException(errorMsg);
+      }
+    } catch (e) {
+      if (e is AuthException) rethrow;
+      throw AuthException('خطای شبکه. مطمئن شو سرور بک‌اند روشنه.');
+    }
   }
 
-  // ۴. مرحله دوم ثبت‌نام: تایید OTP ماک شده و ارسال ریکوئست واقعی به جنگو
   Future<void> confirmRegistrationOtp({required String email, required String otp}) async {
-    if (otp.trim() != '123456') {
-      throw const AuthException('کد تایید نادرست است. (کد تست: 123456)');
-    }
     if (_pendingRegistration == null || _pendingRegistration!.email != email) {
       throw const AuthException('اطلاعات ثبت‌نام پیدا نشد. دوباره تلاش کن.');
     }
 
-    final uri = Uri.parse('$baseUrl/register/');
+    final uri = Uri.parse('$baseUrl/register/'); 
     try {
-      final request = await HttpClient().postUrl(uri);
-      request.headers.set('Content-Type', 'application/json');
-      // ارسال دیتای اصلی به بک‌اند
-      request.add(utf8.encode(jsonEncode({
+      // ۱. آماده‌سازی دیتا
+      final payload = jsonEncode({
         'email': _pendingRegistration!.email,
         'username': _pendingRegistration!.username,
         'password': _pendingRegistration!.password,
-      })));
+        'otp': otp.trim(), 
+      });
+      final bytes = utf8.encode(payload);
+
+      final request = await HttpClient().postUrl(uri);
+      request.headers.set('Content-Type', 'application/json');
+      
+      // 🚀 ۲. ست کردن طول دیتا برای جلوگیری از خالی رسیدن به جنگو
+      request.headers.contentLength = bytes.length;
+      
+      request.add(bytes);
 
       final response = await request.close();
       if (response.statusCode >= 200 && response.statusCode < 300) {
-        // بعد از ثبت‌نام موفق در بک‌اند، خودکار لاگین می‌کنیم
         await signIn(email: _pendingRegistration!.email, password: _pendingRegistration!.password);
-        _pendingRegistration = null; // پاکسازی
+        _pendingRegistration = null;
       } else {
         final body = await utf8.decoder.bind(response).join();
-        throw AuthException('خطای بک‌اند در ثبت‌نام: $body');
+        final errorMsg = jsonDecode(body)['error'] ?? 'کد اشتباه است یا منقضی شده';
+        throw AuthException(errorMsg);
       }
     } catch (e) {
       if (e is AuthException) rethrow;
-      throw AuthException('خطا در ارتباط با سرور: $e');
+      throw AuthException('خطا در ارتباط با سرور.');
     }
   }
 

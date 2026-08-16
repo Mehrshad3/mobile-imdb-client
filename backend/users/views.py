@@ -22,6 +22,10 @@ class RequestOTPView(APIView):
     یک پایانه‌ی عمومی برای درخواست ارسال کد یک‌بار مصرف
     """
     def post(self, request):
+        print("---- Incoming Request ----")
+        print("Data:", request.data)
+        print("Content-Type:", request.content_type)
+        print("--------------------------")
         email = request.data.get('email')
         
         if not email:
