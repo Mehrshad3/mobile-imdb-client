@@ -1,4 +1,8 @@
 __pycache__
-db.sqlite3
-media/
+*.sqlite3*
 .env
+
+media/
+log.txt
+
+.venv/
