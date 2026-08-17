@@ -1,4 +1,8 @@
+// ignore_for_file: prefer_initializing_formals
+
+import '../api/backend_api_client.dart';
 import '../api/imdb_api_client.dart';
+import '../api/imdb_api_exception.dart';
 import '../api/omdb_api_client.dart';
 import '../debug/imdb_search_debug_log.dart';
 import '../models/episode.dart';
@@ -8,16 +12,33 @@ import '../models/title_details.dart';
 import '../models/title_summary.dart';
 
 class ImdbRepository {
-  ImdbRepository({ImdbApiClient? apiClient, OmdbApiClient? omdbApiClient})
-    : _apiClient = apiClient ?? ImdbApiClient(),
-      _omdbApiClient = omdbApiClient ?? OmdbApiClient();
+  ImdbRepository({
+    ImdbApiClient? apiClient,
+    OmdbApiClient? omdbApiClient,
+    BackendApiClient? backendClient,
+  }) : _apiClient = apiClient ?? ImdbApiClient(),
+       _omdbApiClient = omdbApiClient ?? OmdbApiClient(),
+       _backendClient = backendClient;
 
   final ImdbApiClient _apiClient;
   final OmdbApiClient _omdbApiClient;
+  final BackendApiClient? _backendClient;
+
+  bool get _usesBackend => _backendClient?.isConfigured ?? false;
 
   Future<List<TitleSummary>> search(String query) async {
     final trimmed = query.trim();
     imdbSearchDebugLog('Repository.search -> suggestions query="$trimmed"');
+    if (_usesBackend) {
+      final results = await _serverCall(
+        (server) => server.searchTitles(query: trimmed),
+      );
+      imdbSearchDebugLog(
+        'Repository.search <- server count=${results.length} ${_titlesPreview(results)}',
+      );
+      return results;
+    }
+
     final results = await _apiClient.searchSuggestions(trimmed);
     imdbSearchDebugLog(
       'Repository.search <- count=${results.length} ${_titlesPreview(results)}',
@@ -55,6 +76,21 @@ class ImdbRepository {
     if (imdbId == null) {
       imdbSearchDebugLog('Repository.titleSummaryById stop=no-valid-imdb-id');
       return const [];
+    }
+
+    if (_usesBackend) {
+      final results = await _serverCall((server) {
+        final titleHint = _fallbackTitle(fallbackTitle);
+        if (titleHint != null) {
+          return server.searchTitles(query: '$titleHint $imdbId', first: 1);
+        }
+        return server.searchTitleById(imdbId);
+      });
+      imdbSearchDebugLog(
+        'Repository.titleSummaryById <- server '
+        'count=${results.length} ${_titlesPreview(results)}',
+      );
+      return results;
     }
 
     try {
@@ -127,6 +163,10 @@ class ImdbRepository {
   }
 
   Future<List<TitleSummary>> trending({int first = 8}) async {
+    if (_usesBackend) {
+      return _serverCall((server) => server.trendingTitles(first: first));
+    }
+
     final titles = await _apiClient.fetchTrending(first: first);
     if (titles.every((title) => title.imageUrl != null)) {
       return titles;
@@ -176,6 +216,18 @@ class ImdbRepository {
       );
     }
 
+    if (_usesBackend) {
+      final results = await _serverCall(
+        (server) =>
+            server.advancedTitleSearch(query: trimmed, type: 'all', first: 20),
+      );
+      imdbSearchDebugLog(
+        'Repository.advancedSearch <- server '
+        'count=${results.length} ${_titlesPreview(results)}',
+      );
+      return results;
+    }
+
     imdbSearchDebugLog(
       'Repository.advancedSearch -> AdvancedTitleSearch types=movie,tvSeries,tvMiniSeries',
     );
@@ -202,6 +254,18 @@ class ImdbRepository {
         imdbId,
         fallbackTitle: titleSearchTextWithoutImdbId(trimmed),
       );
+    }
+
+    if (_usesBackend) {
+      final results = await _serverCall(
+        (server) =>
+            server.searchTitles(query: trimmed, type: 'movie', first: 20),
+      );
+      imdbSearchDebugLog(
+        'Repository.searchMovies <- server '
+        'count=${results.length} ${_titlesPreview(results)}',
+      );
+      return results;
     }
 
     imdbSearchDebugLog(
@@ -232,6 +296,18 @@ class ImdbRepository {
       );
     }
 
+    if (_usesBackend) {
+      final results = await _serverCall(
+        (server) =>
+            server.searchTitles(query: trimmed, type: 'series', first: 20),
+      );
+      imdbSearchDebugLog(
+        'Repository.searchSeries <- server '
+        'count=${results.length} ${_titlesPreview(results)}',
+      );
+      return results;
+    }
+
     imdbSearchDebugLog(
       'Repository.searchSeries -> AdvancedTitleSearch types=tvSeries,tvMiniSeries',
     );
@@ -247,6 +323,10 @@ class ImdbRepository {
   }
 
   Future<List<TitleSummary>> popularMovies({int first = 12}) {
+    if (_usesBackend) {
+      return _serverCall((server) => server.popularMovies(first: first));
+    }
+
     return _apiClient.advancedTitleSearch(
       first: first,
       titleTypeIds: const ['movie'],
@@ -254,6 +334,10 @@ class ImdbRepository {
   }
 
   Future<List<TitleSummary>> popularSeries({int first = 12}) {
+    if (_usesBackend) {
+      return _serverCall((server) => server.popularSeries(first: first));
+    }
+
     return _apiClient.advancedTitleSearch(
       first: first,
       titleTypeIds: const ['tvSeries', 'tvMiniSeries'],
@@ -261,6 +345,10 @@ class ImdbRepository {
   }
 
   Future<List<TitleSummary>> newTitles({int first = 12}) {
+    if (_usesBackend) {
+      return _serverCall((server) => server.newTitles(first: first));
+    }
+
     final now = DateTime.now();
     return _apiClient.advancedTitleSearch(
       first: first,
@@ -271,6 +359,10 @@ class ImdbRepository {
   }
 
   Future<List<TitleSummary>> topRatedMovies({int first = 12}) {
+    if (_usesBackend) {
+      return _serverCall((server) => server.topRatedMovies(first: first));
+    }
+
     return _apiClient.advancedTitleSearch(
       first: first,
       titleTypeIds: const ['movie'],
@@ -281,10 +373,18 @@ class ImdbRepository {
   }
 
   Future<List<TitleDetails>> titleDetails(List<String> titleIds) {
+    if (_usesBackend) {
+      return _serverCall((server) => server.titleMetadata(titleIds));
+    }
+
     return _apiClient.fetchTitleMetadata(titleIds);
   }
 
   Future<TitleDetailsBundle> titleDetailsBundle(TitleSummary summary) async {
+    if (_usesBackend) {
+      return _serverCall((server) => server.titleDetailsBundle(summary));
+    }
+
     final detailsFuture = _apiClient.fetchTitleMetadata([summary.id]);
     final omdbFuture = _omdbApiClient.fetchTitleById(summary.id);
 
@@ -333,10 +433,20 @@ class ImdbRepository {
   }
 
   Future<SeriesOverview> seriesOverview(String titleId) {
+    if (_usesBackend) {
+      return _serverCall((server) => server.seriesOverview(titleId));
+    }
+
     return _apiClient.fetchSeriesOverview(titleId);
   }
 
   Future<List<Episode>> seasonEpisodes(String titleId, int seasonNumber) {
+    if (_usesBackend) {
+      return _serverCall(
+        (server) => server.seasonEpisodes(titleId, seasonNumber),
+      );
+    }
+
     return _apiClient.fetchSeasonEpisodes(titleId, seasonNumber);
   }
 
@@ -344,6 +454,12 @@ class ImdbRepository {
     String titleId,
     int seasonNumber,
   ) async {
+    if (_usesBackend) {
+      return _serverCall(
+        (server) => server.seasonEpisodes(titleId, seasonNumber),
+      );
+    }
+
     Object? imdbError;
     final imdbEpisodes = await _readSafely(
       _apiClient.fetchSeasonEpisodes(titleId, seasonNumber),
@@ -362,6 +478,20 @@ class ImdbRepository {
       throw imdbError!;
     }
     return const [];
+  }
+
+  Future<T> _serverCall<T>(
+    Future<T> Function(BackendApiClient server) action,
+  ) async {
+    final server = _backendClient;
+    if (server == null || !server.isConfigured) {
+      throw const ImdbApiException('Backend server is not configured.');
+    }
+    try {
+      return await action(server);
+    } on BackendApiException catch (error) {
+      throw ImdbApiException(error.message, statusCode: error.statusCode);
+    }
   }
 
   void close() {

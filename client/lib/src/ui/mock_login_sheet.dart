@@ -3,11 +3,11 @@ import 'package:flutter/material.dart';
 import '../api/email_otp_service.dart';
 import '../models/mock_user.dart';
 import '../models/user_account.dart';
-import '../repositories/django_auth_repository.dart';
+import '../repositories/mock_auth_repository.dart';
 
 Future<void> showMockLoginSheet(
   BuildContext context,
-  DjangoAuthRepository authRepository,
+  MockAuthRepository authRepository,
 ) {
   return showModalBottomSheet<void>(
     context: context,
@@ -28,7 +28,7 @@ Future<void> showMockLoginSheet(
 class _AuthSheet extends StatefulWidget {
   const _AuthSheet({required this.authRepository});
 
-  final DjangoAuthRepository authRepository;
+  final MockAuthRepository authRepository;
 
   @override
   State<_AuthSheet> createState() => _AuthSheetState();
@@ -117,16 +117,7 @@ class _AuthSheetState extends State<_AuthSheet> {
 
   Future<void> _requestSignupOtp() {
     return _run(() async {
-      await widget.authRepository.requestRegistrationOtp(
-        RegistrationDraft(
-          displayName: _name.text,
-          username: _username.text,
-          email: _signupEmail.text,
-          password: _signupPassword.text,
-          profileImageUrl: _profileImage.text,
-          bio: _bio.text,
-        ),
-      );
+      await widget.authRepository.requestRegistrationOtp(_registrationDraft());
       setState(() {
         _signupOtpSent = true;
       });
@@ -139,6 +130,7 @@ class _AuthSheetState extends State<_AuthSheet> {
       await widget.authRepository.confirmRegistrationOtp(
         email: _signupEmail.text,
         otp: _signupOtp.text,
+        registrationDraft: _registrationDraft(),
       );
       if (mounted) {
         Navigator.of(context).pop();
@@ -182,6 +174,17 @@ class _AuthSheetState extends State<_AuthSheet> {
         Navigator.of(context).pop();
       }
     });
+  }
+
+  RegistrationDraft _registrationDraft() {
+    return RegistrationDraft(
+      displayName: _name.text,
+      username: _username.text,
+      email: _signupEmail.text,
+      password: _signupPassword.text,
+      profileImageUrl: _profileImage.text,
+      bio: _bio.text,
+    );
   }
 
   @override
@@ -255,7 +258,7 @@ class _AuthSheetState extends State<_AuthSheet> {
                     for (final user in MockUser.all)
                       ListTile(
                         leading: CircleAvatar(child: Text(user.displayName[0])),
-                        title: Text(user.displayName),
+                        title: Text(user.displayNameWithRole),
                         subtitle: Text('@${user.username}'),
                         onTap: _busy ? null : () => _mockLogin(user),
                       ),

@@ -8,6 +8,7 @@ class MockUser {
     this.bio,
     this.createdAt,
     this.isMock = false,
+    this.role = 'user',
   });
 
   final String id;
@@ -18,8 +19,12 @@ class MockUser {
   final String? bio;
   final DateTime? createdAt;
   final bool isMock;
+  final String role;
 
   String get storageKey => id.replaceAll(RegExp(r'[^A-Za-z0-9_-]'), '_');
+  bool get isAdmin => role.toLowerCase().trim() == 'admin';
+  String get displayNameWithRole =>
+      isAdmin ? '$displayName 👨‍🏭' : displayName;
 
   static const all = [
     MockUser(
@@ -55,6 +60,7 @@ class MockUser {
       'bio': bio,
       'createdAt': createdAt?.toIso8601String(),
       'isMock': isMock,
+      'role': role,
     };
   }
 
@@ -68,6 +74,7 @@ class MockUser {
       bio: json['bio'] as String?,
       createdAt: DateTime.tryParse(json['createdAt'] as String? ?? ''),
       isMock: json['isMock'] as bool? ?? false,
+      role: json['role'] as String? ?? 'user',
     );
   }
 

@@ -1,3 +1,6 @@
+import 'package:flutter/foundation.dart';
+
+import '../api/backend_api_client.dart';
 import '../models/local_title_stats.dart';
 import '../models/mock_user.dart';
 import '../models/watchlist_item.dart';
@@ -5,17 +8,38 @@ import '../storage/watchlist_store.dart';
 
 typedef UserWatchlistStoreFactory = WatchlistStore Function(MockUser user);
 typedef LocalUsersProvider = Future<List<MockUser>> Function();
+typedef AuthTokenProvider = String? Function();
 
 class LocalTitleStatsRepository {
-  const LocalTitleStatsRepository({this.storeForUser, this.usersProvider});
+  const LocalTitleStatsRepository({
+    this.storeForUser,
+    this.usersProvider,
+    this.backendClient,
+    this.authTokenProvider,
+  });
 
   final UserWatchlistStoreFactory? storeForUser;
   final LocalUsersProvider? usersProvider;
+  final BackendApiClient? backendClient;
+  final AuthTokenProvider? authTokenProvider;
 
   Future<LocalTitleStats> statsForTitle(String titleId) async {
     final normalizedId = titleId.trim();
     if (normalizedId.isEmpty) {
       return const LocalTitleStats();
+    }
+
+    final backend = backendClient;
+    final token = authTokenProvider?.call();
+    if (backend != null &&
+        backend.isConfigured &&
+        token != null &&
+        token.isNotEmpty) {
+      try {
+        return await backend.titleFeedback(token, normalizedId);
+      } catch (error) {
+        debugPrint('Backend title stats failed: $error');
+      }
     }
 
     var ratingCount = 0;
@@ -43,7 +67,7 @@ class LocalTitleStatsRepository {
         reviews.add(
           LocalTitleReview(
             userId: user.id,
-            userDisplayName: user.displayName,
+            userDisplayName: user.displayNameWithRole,
             text: item.reviewText!.trim(),
             userRating: rating,
             hasSpoiler: item.reviewHasSpoiler,

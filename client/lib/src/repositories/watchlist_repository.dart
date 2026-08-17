@@ -1,15 +1,25 @@
 import 'package:flutter/foundation.dart';
 
+import '../api/backend_api_client.dart';
 import '../models/title_details_bundle.dart';
 import '../models/title_summary.dart';
 import '../models/watchlist_item.dart';
 import '../storage/watchlist_store.dart';
 
+typedef AuthTokenProvider = String? Function();
+
 class WatchlistRepository extends ChangeNotifier {
-  WatchlistRepository({WatchlistStore? store})
-    : _store = store ?? WatchlistStore();
+  WatchlistRepository({
+    WatchlistStore? store,
+    BackendApiClient? backendClient,
+    AuthTokenProvider? authTokenProvider,
+  }) : _store = store ?? WatchlistStore(),
+       _serverClient = backendClient,
+       _tokenProvider = authTokenProvider;
 
   WatchlistStore _store;
+  final BackendApiClient? _serverClient;
+  final AuthTokenProvider? _tokenProvider;
   final List<WatchlistItem> _items = [];
 
   bool _loaded = false;
@@ -101,6 +111,7 @@ class WatchlistRepository extends ChangeNotifier {
       _items[index] = item;
     }
     await _saveAndNotify();
+    await _syncWatchlistItem(item);
     return item;
   }
 
@@ -108,32 +119,28 @@ class WatchlistRepository extends ChangeNotifier {
     await load();
     _items.removeWhere((item) => item.id == titleId);
     await _saveAndNotify();
+    await _deleteWatchlistItemFromBackend(titleId);
   }
 
   Future<void> setStatus(String titleId, WatchStatus status) async {
-    await load();
-    final index = _items.indexWhere((item) => item.id == titleId);
-    if (index == -1) {
-      return;
-    }
-    _items[index] = _items[index].copyWith(
-      status: status,
-      updatedAt: DateTime.now(),
+    final item = await _update(
+      titleId,
+      (item) => item.copyWith(status: status, updatedAt: DateTime.now()),
     );
-    await _saveAndNotify();
+    if (item != null) {
+      await _patchWatchlistItemOnBackend(item.id, status: status);
+    }
   }
 
   Future<void> toggleFavorite(String titleId) async {
-    await load();
-    final index = _items.indexWhere((item) => item.id == titleId);
-    if (index == -1) {
-      return;
-    }
-    _items[index] = _items[index].copyWith(
-      favorite: !_items[index].favorite,
-      updatedAt: DateTime.now(),
+    final item = await _update(
+      titleId,
+      (item) =>
+          item.copyWith(favorite: !item.favorite, updatedAt: DateTime.now()),
     );
-    await _saveAndNotify();
+    if (item != null) {
+      await _patchWatchlistItemOnBackend(item.id, favorite: item.favorite);
+    }
   }
 
   Future<void> togglePersonalList(
@@ -179,13 +186,16 @@ class WatchlistRepository extends ChangeNotifier {
   }
 
   Future<void> setUserRating(String titleId, int? rating) async {
-    await _update(titleId, (item) {
+    final item = await _update(titleId, (item) {
       final normalizedRating = rating?.clamp(1, 10);
       return item.copyWith(
         userRating: normalizedRating,
         updatedAt: DateTime.now(),
       );
     });
+    if (item != null) {
+      await _syncRating(item);
+    }
   }
 
   Future<void> setReview(
@@ -194,7 +204,7 @@ class WatchlistRepository extends ChangeNotifier {
     required bool hasSpoiler,
   }) async {
     final trimmed = text.trim();
-    await _update(titleId, (item) {
+    final item = await _update(titleId, (item) {
       return item.copyWith(
         reviewText: trimmed.isEmpty ? null : trimmed,
         reviewHasSpoiler: trimmed.isNotEmpty && hasSpoiler,
@@ -202,6 +212,9 @@ class WatchlistRepository extends ChangeNotifier {
         updatedAt: DateTime.now(),
       );
     });
+    if (item != null) {
+      await _syncReview(item);
+    }
   }
 
   Future<void> toggleEpisodeWatched(
@@ -214,7 +227,7 @@ class WatchlistRepository extends ChangeNotifier {
       return;
     }
 
-    await _update(titleId, (item) {
+    final item = await _update(titleId, (item) {
       final episodeIds = Set<String>.from(item.watchedEpisodeIds);
       final shouldMarkWatched =
           watched ?? !episodeIds.contains(normalizedEpisodeId);
@@ -233,22 +246,64 @@ class WatchlistRepository extends ChangeNotifier {
         updatedAt: DateTime.now(),
       );
     });
+    if (item != null) {
+      final isWatched = item.watchedEpisodeIds.contains(normalizedEpisodeId);
+      await _syncEpisodeProgress(item, normalizedEpisodeId, isWatched);
+      if (item.status == WatchStatus.watching) {
+        await _patchWatchlistItemOnBackend(item.id, status: item.status);
+      }
+    }
   }
 
-  Future<void> _update(
+  Future<WatchlistItem?> _update(
     String titleId,
     WatchlistItem Function(WatchlistItem item) update,
   ) async {
     await load();
     final index = _items.indexWhere((item) => item.id == titleId);
     if (index == -1) {
-      return;
+      return null;
     }
     _items[index] = update(_items[index]);
+    final item = _items[index];
     await _saveAndNotify();
+    return item;
   }
 
   Future<void> _load() async {
+    final token = _authToken;
+    final backend = _serverClient;
+    if (backend != null && backend.isConfigured && token != null) {
+      try {
+        final loadedItems = await backend.watchlist(token);
+        final ratings = await _readBackendPart(
+          'ratings load',
+          () => backend.myRatings(token),
+          <String, int>{},
+        );
+        final reviews = await _readBackendPart(
+          'reviews load',
+          () => backend.myReviews(token),
+          <String, BackendReviewSnapshot>{},
+        );
+        final progress = await _readBackendPart(
+          'progress load',
+          () => backend.watchProgress(token),
+          <String, Set<String>>{},
+        );
+        _items
+          ..clear()
+          ..addAll(
+            _sorted(_mergeFeedback(loadedItems, ratings, reviews, progress)),
+          );
+        _loaded = true;
+        notifyListeners();
+        return;
+      } catch (error) {
+        debugPrint('Backend watchlist load failed: $error');
+      }
+    }
+
     final loadedItems = await _store.read();
     _items
       ..clear()
@@ -265,6 +320,117 @@ class WatchlistRepository extends ChangeNotifier {
     await _store.write(_items);
     notifyListeners();
   }
+
+  String? get _authToken {
+    final token = _tokenProvider?.call()?.trim();
+    return token == null || token.isEmpty ? null : token;
+  }
+
+  Future<void> _syncWatchlistItem(WatchlistItem item) async {
+    final token = _authToken;
+    final backend = _serverClient;
+    if (backend == null || !backend.isConfigured || token == null) {
+      return;
+    }
+    try {
+      await backend.saveWatchlistItem(token, item);
+    } catch (error) {
+      debugPrint('Backend watchlist save failed: $error');
+    }
+  }
+
+  Future<void> _patchWatchlistItemOnBackend(
+    String titleId, {
+    WatchStatus? status,
+    bool? favorite,
+  }) async {
+    final token = _authToken;
+    final backend = _serverClient;
+    if (backend == null || !backend.isConfigured || token == null) {
+      return;
+    }
+    try {
+      await backend.patchWatchlistItem(
+        token,
+        titleId,
+        status: status,
+        favorite: favorite,
+      );
+    } catch (error) {
+      debugPrint('Backend watchlist patch failed: $error');
+    }
+  }
+
+  Future<void> _deleteWatchlistItemFromBackend(String titleId) async {
+    final token = _authToken;
+    final backend = _serverClient;
+    if (backend == null || !backend.isConfigured || token == null) {
+      return;
+    }
+    try {
+      await backend.deleteWatchlistItem(token, titleId);
+    } catch (error) {
+      debugPrint('Backend watchlist delete failed: $error');
+    }
+  }
+
+  Future<void> _syncRating(WatchlistItem item) async {
+    final token = _authToken;
+    final backend = _serverClient;
+    if (backend == null || !backend.isConfigured || token == null) {
+      return;
+    }
+    try {
+      final rating = item.userRating;
+      if (rating == null) {
+        await backend.deleteRating(token, item.id);
+      } else {
+        await backend.saveRating(token, item, rating);
+      }
+    } catch (error) {
+      debugPrint('Backend rating sync failed: $error');
+    }
+  }
+
+  Future<void> _syncReview(WatchlistItem item) async {
+    final token = _authToken;
+    final backend = _serverClient;
+    if (backend == null || !backend.isConfigured || token == null) {
+      return;
+    }
+    try {
+      final text = item.reviewText?.trim() ?? '';
+      if (text.isEmpty) {
+        await backend.deleteReview(token, item.id);
+      } else {
+        await backend.saveReview(
+          token,
+          item,
+          text: text,
+          hasSpoiler: item.reviewHasSpoiler,
+        );
+      }
+    } catch (error) {
+      debugPrint('Backend review sync failed: $error');
+    }
+  }
+
+  Future<void> _syncEpisodeProgress(
+    WatchlistItem item,
+    String episodeId,
+    bool watched,
+  ) async {
+    final token = _authToken;
+    final backend = _serverClient;
+    if (backend == null || !backend.isConfigured || token == null) {
+      return;
+    }
+    try {
+      await backend.setEpisodeWatched(token, item, episodeId, watched: watched);
+    } catch (error) {
+      debugPrint('Backend episode progress sync failed: $error');
+    }
+  }
 }
 
 List<WatchlistItem> _sorted(Iterable<WatchlistItem> items) {
@@ -275,4 +441,35 @@ List<WatchlistItem> _sorted(Iterable<WatchlistItem> items) {
     return bTime.compareTo(aTime);
   });
   return sorted;
+}
+
+List<WatchlistItem> _mergeFeedback(
+  List<WatchlistItem> items,
+  Map<String, int> ratings,
+  Map<String, BackendReviewSnapshot> reviews,
+  Map<String, Set<String>> progress,
+) {
+  return [
+    for (final item in items)
+      item.copyWith(
+        userRating: ratings[item.id],
+        reviewText: reviews[item.id]?.text,
+        reviewHasSpoiler: reviews[item.id]?.hasSpoiler ?? false,
+        reviewCreatedAt: reviews[item.id]?.createdAt,
+        watchedEpisodeIds: progress[item.id] ?? item.watchedEpisodeIds,
+      ),
+  ];
+}
+
+Future<T> _readBackendPart<T>(
+  String label,
+  Future<T> Function() load,
+  T fallback,
+) async {
+  try {
+    return await load();
+  } catch (error) {
+    debugPrint('Backend $label failed: $error');
+    return fallback;
+  }
 }

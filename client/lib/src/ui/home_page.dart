@@ -7,11 +7,12 @@ import '../models/personal_list.dart';
 import '../models/title_summary.dart';
 import '../models/watchlist_item.dart';
 import '../repositories/imdb_repository.dart';
-import '../repositories/django_auth_repository.dart';
+import '../repositories/mock_auth_repository.dart';
 import '../repositories/personal_list_repository.dart';
 import '../repositories/watchlist_repository.dart';
 import '../storage/personal_list_store.dart';
 import '../storage/watchlist_store.dart';
+import 'admin_page.dart';
 import 'api_debug_page.dart';
 import 'cached_poster_image.dart';
 import 'mock_login_sheet.dart';
@@ -30,7 +31,7 @@ class HomePage extends StatefulWidget {
   final ImdbRepository? repository;
   final WatchlistRepository? watchlistRepository;
   final PersonalListRepository? personalListRepository;
-  final DjangoAuthRepository? authRepository;
+  final MockAuthRepository? authRepository;
   final bool autoLoad;
 
   @override
@@ -44,7 +45,7 @@ class _HomePageState extends State<HomePage> {
   late final bool _ownsWatchlistRepository;
   late final PersonalListRepository _personalListRepository;
   late final bool _ownsPersonalListRepository;
-  late final DjangoAuthRepository _authRepository;
+  late final MockAuthRepository _authRepository;
   late final bool _ownsAuthRepository;
   late Future<void> _watchlistFuture;
   late Future<void> _personalListFuture;
@@ -74,13 +75,15 @@ class _HomePageState extends State<HomePage> {
     super.initState();
     _repository = widget.repository ?? ImdbRepository();
     _ownsRepository = widget.repository == null;
-    _authRepository = widget.authRepository ?? DjangoAuthRepository();
+    _authRepository = widget.authRepository ?? MockAuthRepository();
     _ownsAuthRepository = widget.authRepository == null;
     _authRepository.addListener(_onAuthChanged);
     _watchlistRepository =
         widget.watchlistRepository ??
         WatchlistRepository(
           store: WatchlistStore(fileName: _watchlistFileName),
+          backendClient: _authRepository.backendClient,
+          authTokenProvider: () => _authRepository.accessToken,
         );
     _ownsWatchlistRepository = widget.watchlistRepository == null;
     _watchlistFuture = _watchlistRepository.load();
@@ -352,6 +355,14 @@ class _HomePageState extends State<HomePage> {
     );
   }
 
+  void _openAdminPage() {
+    Navigator.of(context).push(
+      MaterialPageRoute<void>(
+        builder: (_) => AdminPage(authRepository: _authRepository),
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     return Directionality(
@@ -365,6 +376,12 @@ class _HomePageState extends State<HomePage> {
                 tooltip: 'بازخوانی',
                 onPressed: _refreshHome,
                 icon: const Icon(Icons.refresh),
+              ),
+            if (_authRepository.currentUser?.isAdmin ?? false)
+              IconButton(
+                tooltip: 'مدیریت',
+                onPressed: _openAdminPage,
+                icon: const Icon(Icons.admin_panel_settings_outlined),
               ),
             _AccountAction(
               authRepository: _authRepository,
@@ -579,7 +596,7 @@ class _AccountAction extends StatelessWidget {
     required this.onLogout,
   });
 
-  final DjangoAuthRepository authRepository;
+  final MockAuthRepository authRepository;
   final VoidCallback onLogin;
   final VoidCallback onLogout;
 
@@ -595,7 +612,7 @@ class _AccountAction extends StatelessWidget {
     }
 
     return PopupMenuButton<_AccountMenuAction>(
-      tooltip: user.displayName,
+      tooltip: user.displayNameWithRole,
       icon: CircleAvatar(
         radius: 15,
         child: Text(user.displayName.characters.first),
@@ -616,7 +633,7 @@ class _AccountAction extends StatelessWidget {
           child: ListTile(
             contentPadding: EdgeInsets.zero,
             leading: const Icon(Icons.person_outline),
-            title: Text(user.displayName),
+            title: Text(user.displayNameWithRole),
             subtitle: Text('@${user.username}'),
           ),
         ),
@@ -799,7 +816,7 @@ class _WatchlistTab extends StatelessWidget {
     required this.onOpenTitle,
   });
 
-  final DjangoAuthRepository authRepository;
+  final MockAuthRepository authRepository;
   final WatchlistRepository repository;
   final Future<void> loadFuture;
   final PersonalListRepository personalListRepository;
@@ -865,7 +882,7 @@ class _WatchlistTab extends StatelessWidget {
                 const SizedBox(width: 8),
                 Expanded(
                   child: Text(
-                    'لیست ${user.displayName}',
+                    'لیست ${user.displayNameWithRole}',
                     style: Theme.of(context).textTheme.titleMedium,
                   ),
                 ),
@@ -890,14 +907,29 @@ class _WatchlistTab extends StatelessWidget {
                   onSelected: () => onFilterChanged(_WatchlistFilter.favorite),
                 ),
                 _WatchlistFilterChip(
+                  label: 'قصد دیدن',
+                  selected: filter == _WatchlistFilter.planned,
+                  onSelected: () => onFilterChanged(_WatchlistFilter.planned),
+                ),
+                _WatchlistFilterChip(
+                  label: 'در حال تماشا',
+                  selected: filter == _WatchlistFilter.watching,
+                  onSelected: () => onFilterChanged(_WatchlistFilter.watching),
+                ),
+                _WatchlistFilterChip(
                   label: 'دیده‌شده',
                   selected: filter == _WatchlistFilter.watched,
                   onSelected: () => onFilterChanged(_WatchlistFilter.watched),
                 ),
                 _WatchlistFilterChip(
-                  label: 'ندیده‌شده',
-                  selected: filter == _WatchlistFilter.unwatched,
-                  onSelected: () => onFilterChanged(_WatchlistFilter.unwatched),
+                  label: 'متوقف‌شده',
+                  selected: filter == _WatchlistFilter.stopped,
+                  onSelected: () => onFilterChanged(_WatchlistFilter.stopped),
+                ),
+                _WatchlistFilterChip(
+                  label: 'رها شده',
+                  selected: filter == _WatchlistFilter.dropped,
+                  onSelected: () => onFilterChanged(_WatchlistFilter.dropped),
                 ),
               ],
             ),
@@ -914,9 +946,10 @@ class _WatchlistTab extends StatelessWidget {
               const _InlineEmpty(text: 'هنوز چیزی به لیست من اضافه نشده است.')
             else if (items.isEmpty)
               _InlineEmpty(
-                text: selectedList == null
-                    ? 'برای این فیلتر موردی وجود ندارد.'
-                    : 'در فهرست «${selectedList.name}» هنوز عنوانی نیست.',
+                text: _emptyWatchlistFilterText(
+                  selectedList: selectedList,
+                  filter: filter,
+                ),
               )
             else
               for (final item in items)
@@ -1652,7 +1685,15 @@ class _HomeSectionData {
 
 enum _SearchFilter { all, movie, series }
 
-enum _WatchlistFilter { all, favorite, watched, unwatched }
+enum _WatchlistFilter {
+  all,
+  favorite,
+  planned,
+  watching,
+  watched,
+  stopped,
+  dropped,
+}
 
 enum _WatchlistMenuAction {
   planned,
@@ -1689,18 +1730,53 @@ List<WatchlistItem> _filteredWatchlistItems(
   _WatchlistFilter filter,
   String? personalListId,
 ) {
-  if (personalListId != null) {
-    return items
-        .where((item) => item.personalListIds.contains(personalListId))
-        .toList();
-  }
+  final scopedItems = personalListId == null
+      ? items
+      : items
+            .where((item) => item.personalListIds.contains(personalListId))
+            .toList();
+
   return switch (filter) {
-    _WatchlistFilter.all => items,
-    _WatchlistFilter.favorite => items.where((item) => item.favorite).toList(),
+    _WatchlistFilter.all => scopedItems,
+    _WatchlistFilter.favorite =>
+      scopedItems.where((item) => item.favorite).toList(),
+    _WatchlistFilter.planned =>
+      scopedItems.where((item) => item.status == WatchStatus.planned).toList(),
+    _WatchlistFilter.watching =>
+      scopedItems.where((item) => item.status == WatchStatus.watching).toList(),
     _WatchlistFilter.watched =>
-      items.where((item) => item.status == WatchStatus.watched).toList(),
-    _WatchlistFilter.unwatched =>
-      items.where((item) => item.status != WatchStatus.watched).toList(),
+      scopedItems.where((item) => item.status == WatchStatus.watched).toList(),
+    _WatchlistFilter.stopped =>
+      scopedItems.where((item) => item.status == WatchStatus.stopped).toList(),
+    _WatchlistFilter.dropped =>
+      scopedItems.where((item) => item.status == WatchStatus.dropped).toList(),
+  };
+}
+
+String _emptyWatchlistFilterText({
+  required PersonalList? selectedList,
+  required _WatchlistFilter filter,
+}) {
+  final filterLabel = _watchlistFilterLabel(filter);
+  if (selectedList == null) {
+    return filter == _WatchlistFilter.all
+        ? 'موردی وجود ندارد.'
+        : 'برای دسته «$filterLabel» موردی وجود ندارد.';
+  }
+  return filter == _WatchlistFilter.all
+      ? 'در فهرست «${selectedList.name}» هنوز عنوانی نیست.'
+      : 'در فهرست «${selectedList.name}» برای دسته «$filterLabel» عنوانی نیست.';
+}
+
+String _watchlistFilterLabel(_WatchlistFilter filter) {
+  return switch (filter) {
+    _WatchlistFilter.all => 'همه',
+    _WatchlistFilter.favorite => 'علاقه‌مندی',
+    _WatchlistFilter.planned => 'قصد دیدن',
+    _WatchlistFilter.watching => 'در حال تماشا',
+    _WatchlistFilter.watched => 'دیده‌شده',
+    _WatchlistFilter.stopped => 'متوقف‌شده',
+    _WatchlistFilter.dropped => 'رها شده',
   };
 }
 
